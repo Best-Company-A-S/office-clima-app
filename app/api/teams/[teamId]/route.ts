@@ -15,7 +15,7 @@ export async function GET(
 ) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -35,9 +35,9 @@ export async function GET(
     }
 
     // Check if user is authorized to view this team
-    const isOwner = team.ownerId === session.user.email;
+    const isOwner = team.ownerId === session.user.id;
     const isMember = team.members.some(
-      (member) => member.userId === session.user?.email
+      (member) => member.userId === session.user?.id
     );
 
     if (!isOwner && !isMember) {
@@ -47,7 +47,7 @@ export async function GET(
     // Add current user ID to response
     return NextResponse.json({
       ...team,
-      currentUserId: session.user.email,
+      currentUserId: session.user.id,
     });
   } catch (error) {
     console.error("Error fetching team:", error);
@@ -64,7 +64,7 @@ export async function PATCH(
 ) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -80,7 +80,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    if (team.ownerId !== session.user.email) {
+    if (team.ownerId !== session.user.id) {
       return NextResponse.json(
         { error: "Only the team owner can update team details" },
         { status: 403 }
@@ -120,7 +120,7 @@ export async function DELETE(
 ) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -136,7 +136,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    if (team.ownerId !== session.user.email) {
+    if (team.ownerId !== session.user.id) {
       return NextResponse.json(
         { error: "Only the team owner can delete the team" },
         { status: 403 }

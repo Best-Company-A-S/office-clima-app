@@ -17,7 +17,7 @@ model Team {
   id String @id @default(uuid())
   name String
   description String?
-  ownerId String @unique
+  ownerId Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   members TeamMember[]
@@ -39,7 +39,7 @@ model TeamMember {
   id String @id @default(uuid())
   teamId String
   team Team @relation(fields: [teamId], references: [id])
-  userId String @unique
+  userId Int 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -49,11 +49,12 @@ model Room {
   name String
   description String?
   teamId String
-  team Team @relation(fields: [teamId], references: [id])
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   devices Device[]
+  surveys Survey[]
 }
 
 model Device {
@@ -69,6 +70,32 @@ model Device {
   pairedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Survey {
+  id          String           @id @default(uuid())
+  title       String
+  active      Boolean          @default(true)
+  roomId      String
+  room        Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  createdById Int
+  responses   SurveyResponse[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([roomId])
+  @@index([createdById])
+}
+
+model SurveyResponse {
+  id        String   @id @default(uuid())
+  surveyId  String
+  survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([surveyId])
 }
 
 

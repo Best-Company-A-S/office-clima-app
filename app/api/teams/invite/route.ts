@@ -12,7 +12,7 @@ const createInviteSchema = z.object({
 export async function POST(request: Request) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    if (team.ownerId !== session.user.email) {
+    if (team.ownerId !== session.user.id) {
       return NextResponse.json(
         { error: "Only the team owner can generate invite codes" },
         { status: 403 }
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
       data: {
         teamId,
         code: uniqueCode,
-        createdById: session.user.email,
+        createdById: session.user.id,
       },
     });
 

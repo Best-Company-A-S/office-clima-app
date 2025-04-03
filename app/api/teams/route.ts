@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 export async function GET() {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -13,7 +13,7 @@ export async function GET() {
     // Get teams where the user is a member
     const memberTeams = await prisma.teamMember.findMany({
       where: {
-        userId: session.user.email,
+        userId: session.user.id as string,
       },
       include: {
         team: true,
@@ -23,7 +23,7 @@ export async function GET() {
     // Get teams where the user is an owner
     const ownedTeams = await prisma.team.findMany({
       where: {
-        ownerId: session.user.email,
+        ownerId: session.user.id as string,
       },
     });
 

@@ -11,7 +11,7 @@ const joinTeamSchema = z.object({
 export async function POST(request: Request) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     const existingMembership = await prisma.teamMember.findFirst({
       where: {
         teamId: invite.teamId,
-        userId: session.user.email,
+        userId: session.user.id,
       },
     });
 
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     }
 
     // Check if user is already the owner of the team
-    if (invite.team.ownerId === session.user.email) {
+    if (invite.team.ownerId === session.user.id) {
       return NextResponse.json(
         { error: "You are the owner of this team" },
         { status: 400 }
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     const membership = await prisma.teamMember.create({
       data: {
         teamId: invite.teamId,
-        userId: session.user.email,
+        userId: session.user.id!,
       },
     });
 

@@ -13,7 +13,7 @@ const createRoomSchema = z.object({
 export async function POST(request: Request) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       where: { id: teamId },
       include: {
         members: {
-          where: { userId: session.user.email },
+          where: { userId: session.user.id as string },
         },
       },
     });
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    const isOwner = team.ownerId === session.user.email;
+    const isOwner = team.ownerId === (session.user.id as string);
     const isMember = team.members.length > 0;
 
     if (!isOwner && !isMember) {

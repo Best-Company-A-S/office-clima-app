@@ -49,7 +49,7 @@ export async function POST(request: Request) {
           team: {
             include: {
               members: {
-                where: { userId: session.user.email },
+                where: { userId: session.user.id as string },
               },
             },
           },
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Room not found" }, { status: 404 });
       }
 
-      const isOwner = room.team.ownerId === session.user.email;
+      const isOwner = room.team.ownerId === (session.user.id as string);
       const isMember = room.team.members.length > 0;
 
       if (!isOwner && !isMember) {
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
 export async function GET() {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

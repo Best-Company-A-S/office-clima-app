@@ -138,7 +138,10 @@ export const RoomCard = ({
   };
 
   return (
-    <Card className="w-full overflow-hidden hover:shadow-md transition-shadow">
+    <Card
+      className="w-full overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+      onClick={() => router.push(`/rooms/${room.id}`)}
+    >
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <div>
@@ -158,7 +161,10 @@ export const RoomCard = ({
           variant="secondary"
           size="sm"
           className="flex-1"
-          onClick={() => devicePairingModal.onOpen(room)}
+          onClick={(e) => {
+            e.stopPropagation();
+            devicePairingModal.onOpen(room);
+          }}
         >
           <PlusCircle className="h-4 w-4 mr-2" />
           Pair Device
@@ -166,7 +172,10 @@ export const RoomCard = ({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => roomModal.onOpenEdit(room)}
+          onClick={(e) => {
+            e.stopPropagation();
+            roomModal.onOpenEdit(room);
+          }}
         >
           <Edit className="h-4 w-4" />
         </Button>
@@ -174,7 +183,11 @@ export const RoomCard = ({
         {isTeamOwner && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </AlertDialogTrigger>

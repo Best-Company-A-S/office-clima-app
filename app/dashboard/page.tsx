@@ -4,10 +4,11 @@ import { TeamsList } from "@/app/components/TeamsList";
 import { Separator } from "@/components/ui/separator";
 import { TeamButtonsClient } from "./_components/TeamButtonsClient";
 import axios from "axios";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, LogOut, PlusCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const DashboardPage = () => {
   const { data: session, status } = useSession();
@@ -67,6 +68,10 @@ const DashboardPage = () => {
         <div className="flex gap-3">
           <TeamButtonsClient />
         </div>
+        <Button variant="outline" size="sm" onClick={() => signOut()}>
+          <LogOut className="h-4 w-4 mr-2" />
+          Sign Out
+        </Button>
       </div>
       <Separator className="mb-6" />
 

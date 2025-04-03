@@ -15,7 +15,7 @@ export async function GET(
 ) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -29,7 +29,7 @@ export async function GET(
         team: {
           include: {
             members: {
-              where: { userId: session.user.email },
+              where: { userId: session.user.id as string },
             },
           },
         },
@@ -42,7 +42,7 @@ export async function GET(
     }
 
     // Check if user is authorized to view this room
-    const isOwner = room.team.ownerId === session.user.email;
+    const isOwner = room.team.ownerId === (session.user.id as string);
     const isMember = room.team.members.length > 0;
 
     if (!isOwner && !isMember) {
@@ -74,7 +74,7 @@ export async function PATCH(
 ) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -88,7 +88,7 @@ export async function PATCH(
         team: {
           include: {
             members: {
-              where: { userId: session.user.email },
+              where: { userId: session.user.id as string },
             },
           },
         },
@@ -100,7 +100,7 @@ export async function PATCH(
     }
 
     // Check if user is authorized to update this room
-    const isOwner = room.team.ownerId === session.user.email;
+    const isOwner = room.team.ownerId === (session.user.id as string);
     const isMember = room.team.members.length > 0;
 
     if (!isOwner && !isMember) {
@@ -140,7 +140,7 @@ export async function DELETE(
 ) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -160,7 +160,7 @@ export async function DELETE(
     }
 
     // Check if user is authorized to delete this room (only team owner can delete)
-    const isOwner = room.team.ownerId === session.user.email;
+    const isOwner = room.team.ownerId === (session.user.id as string);
 
     if (!isOwner) {
       return NextResponse.json(
