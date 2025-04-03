@@ -1,0 +1,75 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id String @id @default(uuid())
+  name String
+  description String?
+  ownerId String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members TeamMember[]
+  invites TeamInvite[]
+  rooms Room[]
+}
+
+model TeamInvite {
+  id String @id @default(uuid())
+  teamId String
+  code String @unique
+  createdById String
+  team Team @relation(fields: [teamId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TeamMember {
+  id String @id @default(uuid())
+  teamId String
+  team Team @relation(fields: [teamId], references: [id])
+  userId String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Room {
+  id String @id @default(uuid())
+  name String
+  description String?
+  teamId String
+  team Team @relation(fields: [teamId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  devices Device[]
+}
+
+model Device {
+  device_id String @id
+  name String?
+  description String?
+  model String?
+  firmwareVersion String?
+  isPaired Boolean @default(false)
+  lastSeenAt DateTime?
+  roomId String?
+  room Room? @relation(fields: [roomId], references: [id])
+  pairedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+ 
