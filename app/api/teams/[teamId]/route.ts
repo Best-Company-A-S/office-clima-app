@@ -44,7 +44,11 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    return NextResponse.json(team);
+    // Add current user ID to response
+    return NextResponse.json({
+      ...team,
+      currentUserId: session.user.email,
+    });
   } catch (error) {
     console.error("Error fetching team:", error);
     return NextResponse.json(
