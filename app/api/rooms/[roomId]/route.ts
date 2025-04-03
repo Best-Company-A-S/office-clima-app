@@ -19,6 +19,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const userId = parseInt(session.user.id);
   const roomId = params.roomId;
 
   try {
@@ -29,7 +30,7 @@ export async function GET(
         team: {
           include: {
             members: {
-              where: { userId: session.user.id as string },
+              where: { userId },
             },
           },
         },
@@ -42,7 +43,7 @@ export async function GET(
     }
 
     // Check if user is authorized to view this room
-    const isOwner = room.team.ownerId === (session.user.id as string);
+    const isOwner = room.team.ownerId === userId;
     const isMember = room.team.members.length > 0;
 
     if (!isOwner && !isMember) {
@@ -51,11 +52,16 @@ export async function GET(
 
     // Transform the response to include useful stats
     const transformedRoom = {
-      ...room,
+      id: room.id,
+      name: room.name,
+      description: room.description,
+      teamId: room.teamId,
+      createdAt: room.createdAt,
+      updatedAt: room.updatedAt,
+      devices: room.devices,
       _count: {
         devices: room.devices.length,
       },
-      // Add additional stats if needed
     };
 
     return NextResponse.json(transformedRoom);
@@ -78,6 +84,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const userId = parseInt(session.user.id);
   const roomId = params.roomId;
 
   try {
@@ -88,7 +95,7 @@ export async function PATCH(
         team: {
           include: {
             members: {
-              where: { userId: session.user.id as string },
+              where: { userId },
             },
           },
         },
@@ -100,7 +107,7 @@ export async function PATCH(
     }
 
     // Check if user is authorized to update this room
-    const isOwner = room.team.ownerId === (session.user.id as string);
+    const isOwner = room.team.ownerId === userId;
     const isMember = room.team.members.length > 0;
 
     if (!isOwner && !isMember) {
@@ -122,6 +129,9 @@ export async function PATCH(
     const updatedRoom = await prisma.room.update({
       where: { id: roomId },
       data: validation.data,
+      include: {
+        devices: true,
+      },
     });
 
     return NextResponse.json(updatedRoom);
@@ -144,6 +154,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const userId = parseInt(session.user.id);
   const roomId = params.roomId;
 
   try {
@@ -160,7 +171,7 @@ export async function DELETE(
     }
 
     // Check if user is authorized to delete this room (only team owner can delete)
-    const isOwner = room.team.ownerId === (session.user.id as string);
+    const isOwner = room.team.ownerId === userId;
 
     if (!isOwner) {
       return NextResponse.json(

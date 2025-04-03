@@ -82,6 +82,7 @@ model Survey {
   responses   SurveyResponse[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+  questions   Json             @default("[{\"id\":\"comfort\",\"text\":\"How do you feel about the indoor climate?\"},{\"id\":\"suggestions\",\"text\":\"Do you have any suggestions for improvement?\"}]")
 
   @@index([roomId])
   @@index([createdById])
@@ -91,8 +92,9 @@ model SurveyResponse {
   id        String   @id @default(uuid())
   surveyId  String
   survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  rating    Int
+  rating    Int      @default(0)
   comment   String?  @db.Text
+  answers   Json     @default("{}")
   createdAt DateTime @default(now())
 
   @@index([surveyId])

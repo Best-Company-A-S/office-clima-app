@@ -65,13 +65,13 @@ const DashboardPage = () => {
     <div className="container mx-auto py-8 max-w-7xl">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Your Teams</h1>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
           <TeamButtonsClient />
+          <Button variant="outline" onClick={() => signOut()}>
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </Button>
         </div>
-        <Button variant="outline" size="sm" onClick={() => signOut()}>
-          <LogOut className="h-4 w-4 mr-2" />
-          Sign Out
-        </Button>
       </div>
       <Separator className="mb-6" />
 

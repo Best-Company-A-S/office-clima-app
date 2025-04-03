@@ -5,14 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   ChevronLeft,
-  QrCode,
   LineChart,
   ThermometerSun,
   Droplets,
   Wind,
-  Users,
 } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
   Card,
@@ -22,8 +19,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SurveyList } from "@/app/components/SurveyList";
 import { toast } from "sonner";
 import axios from "axios";
+import { DeviceList } from "@/app/components/DeviceList";
 
 // Types for our data
 interface RoomData {
@@ -32,9 +31,17 @@ interface RoomData {
   description: string | null;
   teamId: string;
   devices: Array<{
-    id: string;
-    name: string;
-    deviceId: string;
+    device_id: string;
+    name: string | null;
+    description: string | null;
+    model: string | null;
+    firmwareVersion: string | null;
+    isPaired: boolean;
+    lastSeenAt: string | null;
+    roomId: string | null;
+    pairedAt: string | null;
+    createdAt: string;
+    updatedAt: string;
     lastReading?: {
       temperature: number;
       humidity: number;
@@ -53,57 +60,44 @@ interface SurveyData {
 }
 
 export default function RoomPage() {
-  const params = useParams();
+  const params = useParams<{ roomId: string }>();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [room, setRoom] = useState<RoomData | null>(null);
   const [surveys, setSurveys] = useState<SurveyData[]>([]);
-  const [activeSurvey, setActiveSurvey] = useState<string | null>(null);
-  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchRoomData = async () => {
-      try {
-        setIsLoading(true);
-        const response = await axios.get(`/api/rooms/${params.roomId}`);
-        setRoom(response.data);
-      } catch (error) {
-        console.error("Error fetching room data:", error);
-        toast.error("Failed to load room data");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (params.roomId) {
-      fetchRoomData();
-    }
-  }, [params.roomId]);
-
-  const handleCreateSurvey = async () => {
+  const fetchData = async () => {
     try {
-      const response = await axios.post(`/api/rooms/${params.roomId}/surveys`);
-      const { surveyId, qrCode } = response.data;
-      setActiveSurvey(surveyId);
-      setQrCodeUrl(qrCode);
-      toast.success("Survey created successfully");
+      setIsLoading(true);
+      const [roomResponse, surveysResponse] = await Promise.all([
+        axios.get(`/api/rooms/${params.roomId}`),
+        axios.get(`/api/rooms/${params.roomId}/surveys`),
+      ]);
+      setRoom(roomResponse.data);
+      setSurveys(surveysResponse.data);
     } catch (error) {
-      console.error("Error creating survey:", error);
-      toast.error("Failed to create survey");
+      toast.error("Failed to load room data");
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchData();
+  }, [params.roomId]);
 
   if (isLoading) {
     return (
       <div className="container max-w-7xl mx-auto py-8">
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-4">
-            <Skeleton className="h-10 w-24" />
+            <div className="h-10 w-10 animate-pulse bg-muted rounded" />
+            <div className="h-8 w-48 animate-pulse bg-muted rounded" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Skeleton className="h-48" />
-            <Skeleton className="h-48" />
-            <Skeleton className="h-48" />
+            <div className="h-48 animate-pulse bg-muted rounded" />
+            <div className="h-48 animate-pulse bg-muted rounded" />
+            <div className="h-48 animate-pulse bg-muted rounded" />
           </div>
         </div>
       </div>
@@ -174,219 +168,101 @@ export default function RoomPage() {
               )}
             </div>
           </div>
-          <Button onClick={handleCreateSurvey} className="gap-2">
-            <QrCode className="h-4 w-4" />
-            Start Survey
-          </Button>
         </div>
 
         <Separator />
 
-        {/* Main Content */}
+        {/* Metrics Cards */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Temperature</CardTitle>
+              <ThermometerSun className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {averageReadings
+                  ? `${averageReadings.temperature.toFixed(1)}°C`
+                  : "N/A"}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Average across all devices
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Humidity</CardTitle>
+              <Droplets className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {averageReadings
+                  ? `${averageReadings.humidity.toFixed(1)}%`
+                  : "N/A"}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Average across all devices
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Air Quality</CardTitle>
+              <Wind className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {averageReadings
+                  ? `${averageReadings.airQuality.toFixed(0)}`
+                  : "N/A"}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Average AQI across all devices
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList>
+          <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="devices">Devices</TabsTrigger>
             <TabsTrigger value="surveys">Surveys</TabsTrigger>
           </TabsList>
-
           <TabsContent value="overview" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Temperature Card */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Temperature
-                  </CardTitle>
-                  <ThermometerSun className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {averageReadings
-                      ? `${averageReadings.temperature.toFixed(1)}°C`
-                      : "No data"}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Average across all devices
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Humidity Card */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Humidity
-                  </CardTitle>
-                  <Droplets className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {averageReadings
-                      ? `${averageReadings.humidity.toFixed(1)}%`
-                      : "No data"}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Average across all devices
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Air Quality Card */}
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    Air Quality
-                  </CardTitle>
-                  <Wind className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
-                    {averageReadings
-                      ? `${averageReadings.airQuality.toFixed(0)}`
-                      : "No data"}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Average AQI across all devices
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Chart will be added here */}
-            <Card className="col-span-4">
+            <Card>
               <CardHeader>
                 <CardTitle>Historical Data</CardTitle>
                 <CardDescription>
                   Temperature and humidity trends over time
                 </CardDescription>
               </CardHeader>
-              <CardContent className="h-[300px]">
-                {/* We'll add a chart component here later */}
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  <LineChart className="h-8 w-8" />
-                  <span className="ml-2">
-                    Historical data visualization coming soon
-                  </span>
+              <CardContent>
+                <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                  <LineChart className="h-8 w-8 mr-2" />
+                  <span>Historical data visualization coming soon</span>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
-
-          <TabsContent value="devices" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {room.devices.map((device) => (
-                <Card key={device.id}>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{device.name}</CardTitle>
-                    <CardDescription>{device.deviceId}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {device.lastReading ? (
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Temperature:
-                          </span>
-                          <span>{device.lastReading.temperature}°C</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Humidity:
-                          </span>
-                          <span>{device.lastReading.humidity}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Air Quality:
-                          </span>
-                          <span>{device.lastReading.airQuality}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-2">
-                          Last updated:{" "}
-                          {new Date(
-                            device.lastReading.timestamp
-                          ).toLocaleString()}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-muted-foreground">
-                        No recent readings
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+          <TabsContent value="devices">
+            <DeviceList
+              roomId={params.roomId}
+              devices={room.devices.map((d) => ({
+                id: d.device_id,
+                name: d.name || "Unnamed Device",
+                lastReading: d.lastReading,
+              }))}
+            />
           </TabsContent>
-
-          <TabsContent value="surveys" className="space-y-4">
-            {activeSurvey && qrCodeUrl && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Active Survey</CardTitle>
-                  <CardDescription>
-                    Share this QR code to collect feedback
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="flex flex-col items-center">
-                  <div className="w-64 h-64 bg-white p-4 rounded-lg">
-                    <img
-                      src={qrCodeUrl}
-                      alt="Survey QR Code"
-                      className="w-full h-full"
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="mt-4"
-                    onClick={() => {
-                      navigator.clipboard.writeText(qrCodeUrl);
-                      toast.success("QR Code URL copied to clipboard");
-                    }}
-                  >
-                    Copy Link
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
-
-            {surveys.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {surveys.map((survey) => (
-                  <Card key={survey.id}>
-                    <CardHeader>
-                      <CardTitle className="text-lg">{survey.title}</CardTitle>
-                      <CardDescription>
-                        Created{" "}
-                        {new Date(survey.createdAt).toLocaleDateString()}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                        <span>{survey.responses} responses</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle>No Surveys Yet</CardTitle>
-                  <CardDescription>
-                    Create a survey to gather feedback about this room
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button onClick={handleCreateSurvey} className="gap-2">
-                    <QrCode className="h-4 w-4" />
-                    Start New Survey
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
+          <TabsContent value="surveys">
+            <SurveyList
+              roomId={params.roomId}
+              surveys={surveys}
+              onSurveyDeleted={fetchData}
+            />
           </TabsContent>
         </Tabs>
       </div>
