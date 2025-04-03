@@ -1,55 +1,63 @@
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
-  const session = await auth();
-
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { searchParams } = new URL(request.url);
-  const deviceId = searchParams.get("deviceId");
-
-  if (!deviceId) {
-    return NextResponse.json(
-      { error: "Device ID is required" },
-      { status: 400 }
-    );
-  }
-
   try {
+    const session = await auth();
+
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get deviceId from query params
+    const { searchParams } = new URL(request.url);
+    const deviceId = searchParams.get("deviceId");
+
+    if (!deviceId) {
+      return NextResponse.json(
+        { error: "Device ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Check if device exists in database
     const device = await prisma.device.findUnique({
-      where: { device_id: deviceId },
+      where: {
+        device_id: deviceId,
+      },
+      select: {
+        device_id: true,
+        name: true,
+        description: true,
+        model: true,
+        roomId: true,
+        isPaired: true,
+      },
     });
 
     if (!device) {
       return NextResponse.json(
         { exists: false, message: "Device not found" },
-        { status: 404 }
+        { status: 200 }
       );
     }
 
-    // Return basic device info
     return NextResponse.json({
       exists: true,
-      isPaired: device.isPaired,
       device: {
-        id: device.device_id,
+        deviceId: device.device_id,
         name: device.name,
         description: device.description,
         model: device.model,
-        firmwareVersion: device.firmwareVersion,
+        roomId: device.roomId,
         isPaired: device.isPaired,
-        pairedAt: device.pairedAt,
-        lastSeenAt: device.lastSeenAt,
       },
     });
   } catch (error) {
-    console.error("Error checking device:", error);
+    console.error("[DEVICE_CHECK]", error);
     return NextResponse.json(
-      { error: "Failed to check device" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

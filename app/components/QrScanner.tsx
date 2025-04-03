@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { Scanner } from "@yudiel/react-qr-scanner";
 import { toast } from "sonner";
 
 interface QrScannerProps {
@@ -8,64 +9,56 @@ interface QrScannerProps {
 }
 
 export const QrScanner = ({ onResult }: QrScannerProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isSupported, setIsSupported] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Check if the browser supports navigator.mediaDevices
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setIsSupported(false);
-      toast.error("Camera access is not supported in this browser");
-      return;
+  const handleScan = (detectedCodes: any[]) => {
+    if (detectedCodes && detectedCodes.length > 0) {
+      // Get the first detected code
+      const result = detectedCodes[0].rawValue;
+      if (result) {
+        onResult(result);
+      }
     }
+  };
 
-    let stream: MediaStream | null = null;
+  const handleError = (err: unknown) => {
+    console.error("QR Scanner error:", err);
+    setError("Could not access camera or scanner error occurred");
+    toast.error("Camera access error. Please try manual entry.");
+  };
 
-    const startCamera = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-        });
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      } catch (error) {
-        console.error("Error accessing camera:", error);
-        setIsSupported(false);
-        toast.error("Could not access camera");
-      }
-    };
-
-    startCamera();
-
-    // Clean up
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
-    };
-  }, []);
-
-  if (!isSupported) {
+  if (error) {
     return (
       <div className="flex items-center justify-center h-full bg-muted/20 text-center p-4">
         <p className="text-muted-foreground">
-          Camera access is not available. Please use manual entry instead.
+          {error}. Please use manual entry instead.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-full">
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        className="w-full h-full object-cover"
+    <div className="w-full h-full">
+      <Scanner
+        onScan={handleScan}
+        onError={handleError}
+        styles={{
+          container: {
+            width: "100%",
+            height: "100%",
+          },
+          video: {
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          },
+        }}
+        components={{
+          finder: false,
+        }}
+        formats={["qr_code"]}
+        scanDelay={500}
       />
-      <div className="absolute inset-0 pointer-events-none border-2 border-primary/40 border-dashed rounded-md m-4"></div>
     </div>
   );
 };

@@ -44,7 +44,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 const configDeviceSchema = z.object({
   name: z.string().min(1, "Device name is required").max(100),
   description: z.string().max(500).optional(),
-  roomId: z.string().uuid("Invalid room ID").optional(),
+  roomId: z.string().optional(),
 });
 
 type ConfigFormValues = z.infer<typeof configDeviceSchema>;
@@ -78,9 +78,9 @@ export const DevicePairingModal = () => {
   const configForm = useForm<ConfigFormValues>({
     resolver: zodResolver(configDeviceSchema),
     defaultValues: {
-      name: deviceDetails?.name || "",
-      description: deviceDetails?.description || "",
-      roomId: preselectedRoom?.id || deviceDetails?.roomId || "",
+      name: "",
+      description: "",
+      roomId: preselectedRoom?.id || "none",
     },
   });
 
@@ -97,7 +97,7 @@ export const DevicePairingModal = () => {
     const fetchRooms = async () => {
       if (currentStep === "configure" && isOpen) {
         try {
-          // Need to get the team ID from the preselected room or the user's teams
+          // Get the team ID from the preselected room
           const teamId = preselectedRoom?.teamId;
 
           if (teamId) {
@@ -106,6 +106,7 @@ export const DevicePairingModal = () => {
           }
         } catch (error) {
           console.error("Error fetching rooms:", error);
+          toast.error("Failed to load rooms");
         }
       }
     };
@@ -115,11 +116,12 @@ export const DevicePairingModal = () => {
 
   // Update the config form when device details or preselected room changes
   useEffect(() => {
-    if (currentStep === "configure" && (deviceDetails || preselectedRoom)) {
+    if (currentStep === "configure") {
       configForm.reset({
         name: deviceDetails?.name || "",
         description: deviceDetails?.description || "",
-        roomId: preselectedRoom?.id || deviceDetails?.roomId || "",
+        // If there's a preselectedRoom, use its ID, otherwise use the device's roomId or "none"
+        roomId: preselectedRoom?.id || deviceDetails?.roomId || "none",
       });
     }
   }, [deviceDetails, preselectedRoom, currentStep, configForm]);
@@ -171,6 +173,7 @@ export const DevicePairingModal = () => {
       await axios.post("/api/devices/pair", {
         device_id: deviceId,
         ...data,
+        roomId: data.roomId === "none" ? null : data.roomId,
       });
 
       toast.success("Device paired successfully");
@@ -380,7 +383,7 @@ export const DevicePairingModal = () => {
                       disabled={isLoading}
                       onValueChange={field.onChange}
                       defaultValue={field.value}
-                      value={field.value || undefined}
+                      value={field.value}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -388,7 +391,7 @@ export const DevicePairingModal = () => {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">No room assignment</SelectItem>
+                        <SelectItem value="none">No room assignment</SelectItem>
                         {availableRooms.map((room) => (
                           <SelectItem key={room.id} value={room.id}>
                             {room.name}
