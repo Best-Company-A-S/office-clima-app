@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 export async function POST(request: Request) {
   // TODO: Validate request body
   const body = await request.json();
-  const { device_id } = body;
+  const { device_id, firmwareVersion, modelType } = body;
 
   const findDevice = await prisma.device.findUnique({
     where: {
@@ -20,6 +20,8 @@ export async function POST(request: Request) {
   const device = await prisma.device.create({
     data: {
       device_id,
+      firmwareVersion,
+      model: modelType,
     },
   });
 
@@ -60,7 +62,7 @@ export async function PUT(request: Request) {
   }
 
   const body = await request.json();
-  const { device_id, name, description } = body;
+  const { device_id, name, description, firmwareVersion, modelType } = body;
 
   const device = await prisma.device.update({
     where: { device_id },
@@ -70,6 +72,8 @@ export async function PUT(request: Request) {
       isPaired: true,
       pairedAt: new Date(),
       lastSeenAt: new Date(),
+      firmwareVersion: firmwareVersion,
+      model: modelType,
     },
   });
 

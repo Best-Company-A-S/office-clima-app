@@ -22,7 +22,7 @@ const DashboardPage = () => {
       router.replace("/");
     }
 
-    if (status === "authenticated" && session?.user?.email) {
+    if (status === "authenticated" && session?.user?.id) {
       const fetchTeams = async () => {
         try {
           setIsLoading(true);
@@ -75,7 +75,7 @@ const DashboardPage = () => {
       </div>
       <Separator className="mb-6" />
 
-      <TeamsList teams={teams} userEmail={session?.user?.email || ""} />
+      <TeamsList teams={teams} userId={session?.user?.id || ""} />
     </div>
   );
 };

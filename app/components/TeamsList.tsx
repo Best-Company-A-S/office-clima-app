@@ -12,10 +12,10 @@ interface TeamsWithMemberCount extends Team {
 
 interface TeamsListProps {
   teams: TeamsWithMemberCount[];
-  userEmail: string;
+  userId: string;
 }
 
-export const TeamsList = ({ teams, userEmail }: TeamsListProps) => {
+export const TeamsList = ({ teams, userId }: TeamsListProps) => {
   if (!teams.length) {
     return <EmptyTeams />;
   }
@@ -26,7 +26,7 @@ export const TeamsList = ({ teams, userEmail }: TeamsListProps) => {
         <TeamCard
           key={team.id}
           team={team}
-          isOwner={team.ownerId === userEmail}
+          isOwner={team.ownerId === parseInt(userId)}
           membersCount={team._count.members}
         />
       ))}
