@@ -3,26 +3,15 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import {
-  ChevronLeft,
-  LineChart,
-  ThermometerSun,
-  Droplets,
-  Wind,
-} from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SurveyList } from "@/app/components/SurveyList";
 import { toast } from "sonner";
 import axios from "axios";
 import { DeviceList } from "@/app/components/DeviceList";
+import { DeviceReadingsChart } from "@/app/components/DeviceReadingsChart";
+import { RoomMetrics } from "@/app/components/RoomMetrics";
 
 // Types for our data
 interface RoomData {
@@ -118,35 +107,6 @@ export default function RoomPage() {
     );
   }
 
-  const getAverageReadings = () => {
-    const devices = room.devices || [];
-    if (devices.length === 0) return null;
-
-    let totalTemp = 0;
-    let totalHumidity = 0;
-    let totalAirQuality = 0;
-    let readingsCount = 0;
-
-    devices.forEach((device) => {
-      if (device.lastReading) {
-        totalTemp += device.lastReading.temperature;
-        totalHumidity += device.lastReading.humidity;
-        totalAirQuality += device.lastReading.airQuality;
-        readingsCount++;
-      }
-    });
-
-    if (readingsCount === 0) return null;
-
-    return {
-      temperature: totalTemp / readingsCount,
-      humidity: totalHumidity / readingsCount,
-      airQuality: totalAirQuality / readingsCount,
-    };
-  };
-
-  const averageReadings = getAverageReadings();
-
   return (
     <div className="container max-w-7xl mx-auto py-8">
       <div className="flex flex-col gap-6">
@@ -172,57 +132,8 @@ export default function RoomPage() {
 
         <Separator />
 
-        {/* Metrics Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Temperature</CardTitle>
-              <ThermometerSun className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {averageReadings
-                  ? `${averageReadings.temperature.toFixed(1)}°C`
-                  : "N/A"}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Average across all devices
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Humidity</CardTitle>
-              <Droplets className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {averageReadings
-                  ? `${averageReadings.humidity.toFixed(1)}%`
-                  : "N/A"}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Average across all devices
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Air Quality</CardTitle>
-              <Wind className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {averageReadings
-                  ? `${averageReadings.airQuality.toFixed(0)}`
-                  : "N/A"}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Average AQI across all devices
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Room Metrics */}
+        <RoomMetrics roomId={room.id} />
 
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-4">
@@ -232,34 +143,14 @@ export default function RoomPage() {
             <TabsTrigger value="surveys">Surveys</TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Historical Data</CardTitle>
-                <CardDescription>
-                  Temperature and humidity trends over time
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                  <LineChart className="h-8 w-8 mr-2" />
-                  <span>Historical data visualization coming soon</span>
-                </div>
-              </CardContent>
-            </Card>
+            <DeviceReadingsChart roomId={room.id} />
           </TabsContent>
           <TabsContent value="devices">
-            <DeviceList
-              roomId={params.roomId}
-              devices={room.devices.map((d) => ({
-                id: d.device_id,
-                name: d.name || "Unnamed Device",
-                lastReading: d.lastReading,
-              }))}
-            />
+            <DeviceList roomId={room.id} devices={room.devices} />
           </TabsContent>
           <TabsContent value="surveys">
             <SurveyList
-              roomId={params.roomId}
+              roomId={room.id}
               surveys={surveys}
               onSurveyDeleted={fetchData}
             />
