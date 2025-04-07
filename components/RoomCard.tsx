@@ -18,6 +18,8 @@ import {
   Thermometer,
   Droplet,
   Gauge,
+  Info,
+  Home,
 } from "lucide-react";
 import { useRoomModal } from "@/hooks/useRoomModal";
 import { useDevicePairingModal } from "@/hooks/useDevicePairingModal";
@@ -37,6 +39,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface RoomCardProps {
   room: Room & {
@@ -82,15 +90,21 @@ export const RoomCard = ({
   const getDeviceStatusDisplay = () => {
     if (!hasDevices) {
       return (
-        <div className="flex flex-col items-center justify-center h-36 bg-muted/20 rounded-md p-4">
-          <p className="text-muted-foreground text-sm text-center">
+        <div className="flex flex-col items-center justify-center h-36 bg-background rounded-md border border-dashed border-muted-foreground/20 p-4">
+          <div className="w-10 h-10 bg-muted/20 rounded-full flex items-center justify-center mb-2">
+            <Thermometer className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <p className="text-muted-foreground text-sm text-center mb-2">
             No devices paired yet
           </p>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="mt-2"
-            onClick={() => devicePairingModal.onOpen(room)}
+            className="mt-1"
+            onClick={(e) => {
+              e.stopPropagation();
+              devicePairingModal.onOpen(room);
+            }}
           >
             <PlusCircle className="h-4 w-4 mr-2" />
             Add Device
@@ -105,10 +119,10 @@ export const RoomCard = ({
         {room.devices.slice(0, 3).map((device) => (
           <div
             key={device.device_id}
-            className="flex items-center justify-between bg-muted/30 p-2 rounded-md"
+            className="flex items-center justify-between bg-muted/10 p-3 rounded-md border border-border/50 hover:border-primary/20 transition-colors"
           >
             <div className="flex items-center">
-              <div className="bg-primary/10 p-1 rounded-full mr-2">
+              <div className="bg-primary/10 p-1.5 rounded-full mr-3">
                 <Thermometer className="h-4 w-4 text-primary" />
               </div>
               <div>
@@ -125,11 +139,39 @@ export const RoomCard = ({
                 )}
               </div>
             </div>
+
+            {device.lastReading && (
+              <div className="flex gap-1.5">
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="text-xs font-medium flex items-center">
+                        <Thermometer className="h-3 w-3 mr-1 text-red-500" />
+                        {device.lastReading.temperature}°C
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Temperature</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="text-xs font-medium flex items-center">
+                        <Droplet className="h-3 w-3 mr-1 text-blue-500" />
+                        {device.lastReading.humidity}%
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">Humidity</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )}
           </div>
         ))}
 
         {deviceCount > 3 && (
-          <div className="text-center text-sm text-muted-foreground mt-1">
+          <div className="text-center text-sm text-muted-foreground mt-1 p-1 bg-muted/10 rounded-md border border-border/50">
             + {deviceCount - 3} more devices
           </div>
         )}
@@ -139,24 +181,27 @@ export const RoomCard = ({
 
   return (
     <Card
-      className="w-full overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+      className="w-full overflow-hidden hover:shadow-md transition-all hover:border-primary/20 cursor-pointer group"
       onClick={() => router.push(`/rooms/${room.id}`)}
     >
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle className="text-xl font-bold">{room.name}</CardTitle>
-            <CardDescription className="mt-1">
-              {room.description || "No description provided"}
-            </CardDescription>
-          </div>
-          <Badge variant="outline" className="ml-2">
+      <CardHeader className="pb-2 relative">
+        <div className="absolute top-3 right-3 size-8 bg-primary/10 rounded-full flex items-center justify-center">
+          <Home className="h-4 w-4 text-primary" />
+        </div>
+        <div className="pr-12">
+          <CardTitle className="text-xl font-semibold group-hover:text-primary transition-colors">
+            {room.name}
+          </CardTitle>
+          <CardDescription className="mt-1">
+            {room.description || "No description provided"}
+          </CardDescription>
+          <Badge variant="outline" className="mt-2">
             {deviceCount} {deviceCount === 1 ? "device" : "devices"}
           </Badge>
         </div>
       </CardHeader>
       <CardContent>{getDeviceStatusDisplay()}</CardContent>
-      <CardFooter className="bg-muted/30 pt-3 pb-3 flex justify-between gap-2">
+      <CardFooter className="bg-muted/10 pt-3 pb-3 flex justify-between gap-2 border-t border-border/30">
         <Button
           variant="secondary"
           size="sm"
@@ -169,50 +214,69 @@ export const RoomCard = ({
           <PlusCircle className="h-4 w-4 mr-2" />
           Pair Device
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            roomModal.onOpenEdit(room);
-          }}
-        >
-          <Edit className="h-4 w-4" />
-        </Button>
 
-        {isTeamOwner && (
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Room</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete this room? This action cannot
-                  be undone and will remove all device associations with this
-                  room.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        <div className="flex gap-1">
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-8"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    roomModal.onOpenEdit(room);
+                  }}
                 >
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        )}
+                  <Edit className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Edit Room</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {isTeamOwner && (
+            <AlertDialog>
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="size-8"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </AlertDialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Delete Room</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Room</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete this room? This action
+                    cannot be undone and will remove all device associations
+                    with this room.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
       </CardFooter>
     </Card>
   );
