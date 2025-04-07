@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useDevicePairingModal } from "@/app/hooks/useDevicePairingModal";
+import { useDevicePairingModal } from "@/hooks/useDevicePairingModal";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -26,7 +26,7 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
-import { QrScanner } from "@/app/components/QrScanner";
+import { QrScanner } from "@/components/QrScanner";
 import {
   Select,
   SelectContent,

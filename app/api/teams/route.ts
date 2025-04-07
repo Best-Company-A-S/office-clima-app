@@ -10,10 +10,12 @@ export async function GET() {
   }
 
   try {
+    const userId = parseInt(session.user.id);
+
     // Get teams where the user is a member
     const memberTeams = await prisma.teamMember.findMany({
       where: {
-        userId: session.user.id as string,
+        userId,
       },
       include: {
         team: true,
@@ -23,18 +25,20 @@ export async function GET() {
     // Get teams where the user is an owner
     const ownedTeams = await prisma.team.findMany({
       where: {
-        ownerId: session.user.id as string,
+        ownerId: userId,
       },
     });
 
     // Combine teams (excluding duplicates)
-    const memberTeamIds = memberTeams.map((membership) => membership.team.id);
+    const memberTeamIds = memberTeams.map(
+      (membership: { team: { id: string } }) => membership.team.id
+    );
     const uniqueOwnedTeams = ownedTeams.filter(
-      (team) => !memberTeamIds.includes(team.id)
+      (team: { id: string }) => !memberTeamIds.includes(team.id)
     );
 
     const teams = [
-      ...memberTeams.map((membership) => membership.team),
+      ...memberTeams.map((membership: { team: any }) => membership.team),
       ...uniqueOwnedTeams,
     ];
 

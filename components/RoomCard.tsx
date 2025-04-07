@@ -19,8 +19,8 @@ import {
   Droplet,
   Gauge,
 } from "lucide-react";
-import { useRoomModal } from "@/app/hooks/useRoomModal";
-import { useDevicePairingModal } from "@/app/hooks/useDevicePairingModal";
+import { useRoomModal } from "@/hooks/useRoomModal";
+import { useDevicePairingModal } from "@/hooks/useDevicePairingModal";
 import { formatDistanceToNow } from "date-fns";
 import axios from "axios";
 import { toast } from "sonner";

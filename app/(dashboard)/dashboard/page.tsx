@@ -1,6 +1,6 @@
 "use client";
 
-import { TeamsList } from "@/app/components/TeamsList";
+import { TeamsList } from "@/components/TeamsList";
 import { Separator } from "@/components/ui/separator";
 import { TeamButtonsClient } from "./_components/TeamButtonsClient";
 import axios from "axios";

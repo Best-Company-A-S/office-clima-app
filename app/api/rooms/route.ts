@@ -17,12 +17,14 @@ export async function GET(request: Request) {
   }
 
   try {
+    const userId = parseInt(session.user.id);
+
     // Check if user is authorized to see rooms for this team (member or owner)
     const team = await prisma.team.findUnique({
       where: { id: teamId },
       include: {
         members: {
-          where: { userId: session.user.id as string },
+          where: { userId },
         },
       },
     });
@@ -31,7 +33,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    const isOwner = team.ownerId === (session.user.id as string);
+    const isOwner = team.ownerId === userId;
     const isMember = team.members.length > 0;
 
     if (!isOwner && !isMember) {
@@ -50,12 +52,22 @@ export async function GET(request: Request) {
     });
 
     // Transform the response to include device count
-    const roomsWithCounts = rooms.map((room) => ({
-      ...room,
-      _count: {
-        devices: room.devices.length,
-      },
-    }));
+    const roomsWithCounts = rooms.map(
+      (room: {
+        id: string;
+        name: string;
+        description: string | null;
+        teamId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        devices: any[];
+      }) => ({
+        ...room,
+        _count: {
+          devices: room.devices.length,
+        },
+      })
+    );
 
     return NextResponse.json(roomsWithCounts);
   } catch (error) {

@@ -28,6 +28,7 @@ export async function POST(request: Request) {
     }
 
     const { inviteCode } = validation.data;
+    const userId = parseInt(session.user.id);
 
     // Find the invite
     const invite = await prisma.teamInvite.findUnique({
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
     const existingMembership = await prisma.teamMember.findFirst({
       where: {
         teamId: invite.teamId,
-        userId: session.user.id,
+        userId,
       },
     });
 
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     }
 
     // Check if user is already the owner of the team
-    if (invite.team.ownerId === session.user.id) {
+    if (invite.team.ownerId === userId) {
       return NextResponse.json(
         { error: "You are the owner of this team" },
         { status: 400 }
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     const membership = await prisma.teamMember.create({
       data: {
         teamId: invite.teamId,
-        userId: session.user.id!,
+        userId,
       },
     });
 

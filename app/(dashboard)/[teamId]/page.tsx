@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { RoomsList } from "@/app/components/RoomsList";
+import { RoomsList } from "@/components/RoomsList";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, Users, Share2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import { useInviteModal } from "@/app/hooks/useInviteModal";
+import { useInviteModal } from "@/hooks/useInviteModal";
 import axios from "axios";
 import { toast } from "sonner";
 

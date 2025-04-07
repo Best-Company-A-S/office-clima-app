@@ -10,12 +10,9 @@ const responseSchema = z.object({
   }),
 });
 
-export async function POST(
-  request: Request,
-  context: { params: { surveyId: string } }
-) {
+export async function POST(request: Request) {
   try {
-    const { surveyId } = await context.params;
+    const surveyId = request.url.split("/").slice(-2)[0];
 
     // Get the survey to check if it's active
     const survey = await prisma.survey.findUnique({
@@ -64,12 +61,9 @@ export async function POST(
   }
 }
 
-export async function GET(
-  request: Request,
-  context: { params: { surveyId: string } }
-) {
+export async function GET(request: Request) {
   try {
-    const { surveyId } = await context.params;
+    const surveyId = request.url.split("/").slice(-2)[0];
 
     const responses = await prisma.surveyResponse.findMany({
       where: { surveyId },

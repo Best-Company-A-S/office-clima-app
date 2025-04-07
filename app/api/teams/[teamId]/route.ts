@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 
 // Validation schema for updating team
 const updateTeamSchema = z.object({
@@ -9,17 +10,14 @@ const updateTeamSchema = z.object({
   description: z.string().max(500).optional(),
 });
 
-export async function GET(
-  request: Request,
-  { params }: { params: { teamId: string } }
-) {
+export async function GET(request: Request) {
   const session = await auth();
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const teamId = params.teamId;
+  const teamId = request.url.split("/").pop();
 
   try {
     // Check if user is a member or owner of the team
@@ -35,9 +33,11 @@ export async function GET(
     }
 
     // Check if user is authorized to view this team
-    const isOwner = team.ownerId === session.user.id;
+    const userId = parseInt(session.user.id);
+    const isOwner = team.ownerId === userId;
     const isMember = team.members.some(
-      (member) => member.userId === session.user?.id
+      (member: { userId: number; teamId: string; id: string }) =>
+        member.userId === userId
     );
 
     if (!isOwner && !isMember) {
@@ -58,17 +58,14 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { teamId: string } }
-) {
+export async function PATCH(request: Request) {
   const session = await auth();
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const teamId = params.teamId;
+  const teamId = request.url.split("/").pop();
 
   try {
     // Verify user is the team owner
@@ -80,7 +77,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    if (team.ownerId !== session.user.id) {
+    const userId = parseInt(session.user.id);
+    if (team.ownerId !== userId) {
       return NextResponse.json(
         { error: "Only the team owner can update team details" },
         { status: 403 }
@@ -114,17 +112,14 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { teamId: string } }
-) {
+export async function DELETE(request: Request) {
   const session = await auth();
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const teamId = params.teamId;
+  const teamId = request.url.split("/").pop();
 
   try {
     // Verify user is the team owner
@@ -136,7 +131,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    if (team.ownerId !== session.user.id) {
+    const userId = parseInt(session.user.id);
+    if (team.ownerId !== userId) {
       return NextResponse.json(
         { error: "Only the team owner can delete the team" },
         { status: 403 }

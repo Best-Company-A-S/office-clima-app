@@ -14,7 +14,7 @@ const pairDeviceSchema = z.object({
 export async function POST(request: Request) {
   const session = await auth();
 
-  if (!session?.user?.email) {
+  if (!session?.user?.email || !session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -43,13 +43,15 @@ export async function POST(request: Request) {
 
     // If roomId is provided, check if user has access to that room
     if (roomId) {
+      const userId = parseInt(session.user.id);
+
       const room = await prisma.room.findUnique({
         where: { id: roomId },
         include: {
           team: {
             include: {
               members: {
-                where: { userId: session.user.id as string },
+                where: { userId },
               },
             },
           },
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Room not found" }, { status: 404 });
       }
 
-      const isOwner = room.team.ownerId === (session.user.id as string);
+      const isOwner = room.team.ownerId === userId;
       const isMember = room.team.members.length > 0;
 
       if (!isOwner && !isMember) {

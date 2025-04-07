@@ -114,7 +114,10 @@ export const SurveyList = ({
       return <p className="text-muted-foreground">No responses yet</p>;
 
     const comfortRatings = responses
-      .map((r) => r.answers.comfort)
+      .map(
+        (r: { answers: { comfort: number; suggestions?: string } }) =>
+          r.answers.comfort
+      )
       .filter(Boolean);
     const avgComfort = comfortRatings.length
       ? (

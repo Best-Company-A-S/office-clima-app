@@ -207,7 +207,7 @@ export async function GET(request: Request) {
 
     // Process the data to ensure proper date handling
     const processedStats = Array.isArray(rawStats)
-      ? rawStats.map((item) => ({
+      ? rawStats.map((item: { hour: Date | string; [key: string]: any }) => ({
           ...item,
           hour: item.hour instanceof Date ? item.hour.toISOString() : item.hour,
         }))

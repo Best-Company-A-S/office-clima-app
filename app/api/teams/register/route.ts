@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
-export default async function POST(request: Request) {
+export async function POST(request: Request) {
   const session = await auth();
 
   if (!session) {
@@ -12,11 +12,13 @@ export default async function POST(request: Request) {
   const body = await request.json();
   const { name, description } = body;
 
+  const userId = parseInt(session.user?.id!);
+
   const team = await prisma.team.create({
     data: {
       name,
       description,
-      ownerId: session.user?.id!,
+      ownerId: userId,
     },
   });
 

@@ -29,13 +29,14 @@ export async function POST(request: Request) {
     }
 
     const { name, description } = validation.data;
+    const userId = parseInt(session.user.id);
 
     // Create the team
     const team = await prisma.team.create({
       data: {
         name,
         description,
-        ownerId: session.user?.id!,
+        ownerId: userId,
       },
     });
 

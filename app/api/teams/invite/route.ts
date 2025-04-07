@@ -29,6 +29,7 @@ export async function POST(request: Request) {
     }
 
     const { teamId } = validation.data;
+    const userId = parseInt(session.user.id);
 
     // Check if user is the team owner
     const team = await prisma.team.findUnique({
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    if (team.ownerId !== session.user.id) {
+    if (team.ownerId !== userId) {
       return NextResponse.json(
         { error: "Only the team owner can generate invite codes" },
         { status: 403 }

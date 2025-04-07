@@ -2,8 +2,8 @@
 
 import { Button } from "@/components/ui/button";
 import { Users, UserPlus } from "lucide-react";
-import { useTeamModal } from "@/app/hooks/useTeamModal";
-import { useJoinTeamModal } from "@/app/hooks/useJoinTeamModal";
+import { useTeamModal } from "@/hooks/useTeamModal";
+import { useJoinTeamModal } from "@/hooks/useJoinTeamModal";
 
 export const TeamButtonsClient = () => {
   const teamModal = useTeamModal();

@@ -13,18 +13,17 @@ const updateReadingSchema = z.object({
     .optional(),
 });
 
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request) {
+  const id = request.url.split("/").pop();
+
   try {
-    const readingId = params.id;
+    const readingId = id;
 
     const reading = await prisma.$queryRaw`
-      SELECT dr.*, d.name as device_name, d.room_id as room_id, r.name as room_name
+      SELECT dr.*, d.name as device_name, d.device_id as device_id, r.name as room_name
       FROM "DeviceReading" dr
-      JOIN "Device" d ON dr.device_id = d.device_id
-      LEFT JOIN "Room" r ON d.room_id = r.id
+      JOIN "Device" d ON dr."deviceId" = d.device_id
+      LEFT JOIN "Room" r ON d."roomId" = r.id
       WHERE dr.id = ${readingId}
     `;
 
@@ -42,10 +41,8 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: Request) {
+  const id = request.url.split("/").pop();
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -53,7 +50,7 @@ export async function PATCH(
   }
 
   try {
-    const readingId = params.id;
+    const readingId = id;
     const body = await request.json();
 
     // Validate request body
@@ -67,10 +64,10 @@ export async function PATCH(
 
     // Check if reading exists
     const existingReading = await prisma.$queryRaw`
-      SELECT dr.*, d.room_id, r.team_id
+      SELECT dr.*, d."roomId", r."teamId"
       FROM "DeviceReading" dr
-      JOIN "Device" d ON dr.device_id = d.device_id
-      LEFT JOIN "Room" r ON d.room_id = r.id
+      JOIN "Device" d ON dr."deviceId" = d.device_id
+      LEFT JOIN "Room" r ON d."roomId" = r.id
       WHERE dr.id = ${readingId}
     `;
 
@@ -84,18 +81,18 @@ export async function PATCH(
 
     // Check user access to the team
     const reading = existingReading[0];
-    if (reading.room_id && reading.team_id) {
+    if (reading.roomId && reading.teamId) {
       const userId = parseInt(session.user.id);
       const isTeamMember = await prisma.$queryRaw`
         SELECT * FROM "TeamMember" tm
-        WHERE tm.team_id = ${reading.team_id}
-        AND tm.user_id = ${userId}
+        WHERE tm."teamId" = ${reading.teamId}
+        AND tm."userId" = ${userId}
       `;
 
       const isTeamOwner = await prisma.$queryRaw`
         SELECT * FROM "Team" t
-        WHERE t.id = ${reading.team_id}
-        AND t.owner_id = ${userId}
+        WHERE t.id = ${reading.teamId}
+        AND t."ownerId" = ${userId}
       `;
 
       if (
@@ -138,10 +135,8 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: Request) {
+  const id = request.url.split("/").pop();
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -149,14 +144,14 @@ export async function DELETE(
   }
 
   try {
-    const readingId = params.id;
+    const readingId = id;
 
     // Check if reading exists and get team info
     const existingReading = await prisma.$queryRaw`
-      SELECT dr.*, d.room_id, r.team_id
+      SELECT dr.*, d."roomId", r."teamId"
       FROM "DeviceReading" dr
-      JOIN "Device" d ON dr.device_id = d.device_id
-      LEFT JOIN "Room" r ON d.room_id = r.id
+      JOIN "Device" d ON dr."deviceId" = d.device_id
+      LEFT JOIN "Room" r ON d."roomId" = r.id
       WHERE dr.id = ${readingId}
     `;
 
@@ -170,18 +165,18 @@ export async function DELETE(
 
     // Check user access to the team
     const reading = existingReading[0];
-    if (reading.room_id && reading.team_id) {
+    if (reading.roomId && reading.teamId) {
       const userId = parseInt(session.user.id);
       const isTeamMember = await prisma.$queryRaw`
         SELECT * FROM "TeamMember" tm
-        WHERE tm.team_id = ${reading.team_id}
-        AND tm.user_id = ${userId}
+        WHERE tm."teamId" = ${reading.teamId}
+        AND tm."userId" = ${userId}
       `;
 
       const isTeamOwner = await prisma.$queryRaw`
         SELECT * FROM "Team" t
-        WHERE t.id = ${reading.team_id}
-        AND t.owner_id = ${userId}
+        WHERE t.id = ${reading.teamId}
+        AND t."ownerId" = ${userId}
       `;
 
       if (

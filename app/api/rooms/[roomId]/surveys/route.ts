@@ -2,14 +2,12 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import QRCode from "qrcode";
+import { Prisma } from "@prisma/client";
 
-export async function POST(
-  request: Request,
-  context: { params: { roomId: string } }
-) {
+export async function POST(request: Request) {
   try {
+    const roomId = request.url.split("/").slice(-2)[0];
     const session = await auth();
-    const { roomId } = await context.params;
 
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -34,7 +32,8 @@ export async function POST(
     const userId = parseInt(session.user?.id || "0", 10);
     const isOwner = room.team.ownerId === userId;
     const isMember = room.team.members.some(
-      (member) => member.userId === userId
+      (member: { userId: number; teamId: string; id: string }) =>
+        member.userId === userId
     );
 
     console.log({
@@ -81,13 +80,10 @@ export async function POST(
   }
 }
 
-export async function GET(
-  request: Request,
-  context: { params: { roomId: string } }
-) {
+export async function GET(request: Request) {
   try {
+    const roomId = request.url.split("/").slice(-2)[0];
     const session = await auth();
-    const { roomId } = await context.params;
 
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -112,7 +108,8 @@ export async function GET(
     const userId = parseInt(session.user?.id || "0", 10);
     const isOwner = room.team.ownerId === userId;
     const isMember = room.team.members.some(
-      (member) => member.userId === userId
+      (member: { userId: number; teamId: string; id: string }) =>
+        member.userId === userId
     );
 
     console.log({
@@ -148,13 +145,21 @@ export async function GET(
     });
 
     return NextResponse.json(
-      surveys.map((survey) => ({
-        id: survey.id,
-        title: survey.title,
-        active: survey.active,
-        createdAt: survey.createdAt,
-        responses: survey._count.responses,
-      }))
+      surveys.map(
+        (survey: {
+          id: string;
+          title: string;
+          active: boolean;
+          createdAt: Date;
+          _count: { responses: number };
+        }) => ({
+          id: survey.id,
+          title: survey.title,
+          active: survey.active,
+          createdAt: survey.createdAt,
+          responses: survey._count.responses,
+        })
+      )
     );
   } catch (error) {
     console.error("[SURVEYS_GET]", error);

@@ -1,8 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useTeamModal } from "@/app/hooks/useTeamModal";
-import { useJoinTeamModal } from "@/app/hooks/useJoinTeamModal";
+import { useTeamModal } from "@/hooks/useTeamModal";
+import { useJoinTeamModal } from "@/hooks/useJoinTeamModal";
 import { UserPlus, Users } from "lucide-react";
 
 export const EmptyTeams = () => {

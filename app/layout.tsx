@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provder";
 import { SessionProvider } from "next-auth/react";
-import { ModalProvider } from "./providers/ModalProvider";
+import { ModalProvider } from "../providers/ModalProvider";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {

@@ -1,15 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { TeamModal } from "@/app/components/modals/TeamModal";
-import { JoinTeamModal } from "@/app/components/modals/JoinTeamModal";
-import { InviteModal } from "@/app/components/modals/InviteModal";
-import { RoomModal } from "@/app/components/modals/RoomModal";
-import { DevicePairingModal } from "@/app/components/modals/DevicePairingModal";
-import { useJoinTeamModal } from "@/app/hooks/useJoinTeamModal";
-import { useInviteModal } from "@/app/hooks/useInviteModal";
-import { useRoomModal } from "@/app/hooks/useRoomModal";
-import { useDevicePairingModal } from "@/app/hooks/useDevicePairingModal";
+import { TeamModal } from "@/components/modals/TeamModal";
+import { JoinTeamModal } from "@/components/modals/JoinTeamModal";
+import { InviteModal } from "@/components/modals/InviteModal";
+import { RoomModal } from "@/components/modals/RoomModal";
+import { DevicePairingModal } from "@/components/modals/DevicePairingModal";
+import { useJoinTeamModal } from "@/hooks/useJoinTeamModal";
+import { useInviteModal } from "@/hooks/useInviteModal";
+import { useRoomModal } from "@/hooks/useRoomModal";
+import { useDevicePairingModal } from "@/hooks/useDevicePairingModal";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);

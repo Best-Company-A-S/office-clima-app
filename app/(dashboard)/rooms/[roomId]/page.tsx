@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { SurveyList } from "@/app/components/SurveyList";
+import { SurveyList } from "@/components/SurveyList";
 import { toast } from "sonner";
 import axios from "axios";
-import { DeviceList } from "@/app/components/DeviceList";
-import { DeviceReadingsChart } from "@/app/components/DeviceReadingsChart";
-import { RoomMetrics } from "@/app/components/RoomMetrics";
+import { DeviceList } from "@/components/DeviceList";
+import { DeviceReadingsChart } from "@/components/DeviceReadingsChart";
+import { RoomMetrics } from "@/components/RoomMetrics";
 
 // Types for our data
 interface RoomData {

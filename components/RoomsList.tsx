@@ -3,7 +3,7 @@
 import { Room } from "@prisma/client";
 import { RoomCard } from "./RoomCard";
 import { Button } from "@/components/ui/button";
-import { useRoomModal } from "@/app/hooks/useRoomModal";
+import { useRoomModal } from "@/hooks/useRoomModal";
 import { PlusCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 

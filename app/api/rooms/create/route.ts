@@ -30,13 +30,14 @@ export async function POST(request: Request) {
     }
 
     const { name, description, teamId } = validation.data;
+    const userId = parseInt(session.user.id);
 
     // Verify user is authorized to create rooms in this team
     const team = await prisma.team.findUnique({
       where: { id: teamId },
       include: {
         members: {
-          where: { userId: session.user.id as string },
+          where: { userId },
         },
       },
     });
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    const isOwner = team.ownerId === (session.user.id as string);
+    const isOwner = team.ownerId === userId;
     const isMember = team.members.length > 0;
 
     if (!isOwner && !isMember) {

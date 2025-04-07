@@ -3,34 +3,44 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  // TODO: Validate request body
-  const body = await request.json();
-  const { device_id, firmwareVersion, modelType } = body;
+  try {
+    console.log("Device registration request received");
+    const body = await request.json();
+    const { device_id, firmwareVersion, modelType } = body;
+    console.log("Request data:", { device_id, firmwareVersion, modelType });
 
-  const findDevice = await prisma.device.findUnique({
-    where: {
-      device_id,
-    },
-  });
+    const findDevice = await prisma.device.findUnique({
+      where: {
+        device_id,
+      },
+    });
 
-  if (findDevice) {
-    return NextResponse.json({ exists: true }, { status: 409 });
+    console.log("Existing device:", findDevice);
+
+    if (findDevice) {
+      console.log("Device already exists");
+      return NextResponse.json({ exists: true }, { status: 409 });
+    }
+
+    const device = await prisma.device.create({
+      data: {
+        device_id,
+        firmwareVersion,
+        model: modelType,
+      },
+    });
+
+    console.log("Device created:", device);
+    return NextResponse.json(device);
+  } catch (error) {
+    console.error("Error in device registration:", error);
+    return NextResponse.json({ error: "Registration failed" }, { status: 500 });
   }
-
-  const device = await prisma.device.create({
-    data: {
-      device_id,
-      firmwareVersion,
-      model: modelType,
-    },
-  });
-
-  return NextResponse.json(device);
 }
 
 /* Curl Command
 
-curl -X POST http://localhost:3000/api/device/register \
+curl -L -X POST https://clima-app-blush-beta.vercel.app/api/devices/register \
   -H "Content-Type: application/json" \
   -d '{"device_id": "1234567890", "firmwareVersion": "1.0.0", "modelType": "ESP32"}'
 

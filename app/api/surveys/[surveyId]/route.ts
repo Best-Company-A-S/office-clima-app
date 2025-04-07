@@ -1,14 +1,12 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
-export async function DELETE(
-  request: Request,
-  context: { params: { surveyId: string } }
-) {
+export async function DELETE(request: Request) {
   try {
     const session = await auth();
-    const { surveyId } = await context.params;
+    const surveyId = request.url.split("/").pop();
 
     if (!session) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,7 +36,8 @@ export async function DELETE(
     const userId = parseInt(session.user?.id || "0", 10);
     const isOwner = survey.room.team.ownerId === userId;
     const isMember = survey.room.team.members.some(
-      (member) => member.userId === userId
+      (member: { userId: number; teamId: string; id: string }) =>
+        member.userId === userId
     );
 
     if (!isOwner && !isMember) {

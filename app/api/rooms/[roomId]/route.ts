@@ -9,10 +9,8 @@ const updateRoomSchema = z.object({
   description: z.string().max(500).optional(),
 });
 
-export async function GET(
-  request: Request,
-  { params }: { params: { roomId: string } }
-) {
+export async function GET(request: Request) {
+  const roomId = request.url.split("/").pop();
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -20,7 +18,6 @@ export async function GET(
   }
 
   const userId = parseInt(session.user.id);
-  const roomId = params.roomId;
 
   try {
     // Get the room with its devices
@@ -74,10 +71,8 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { roomId: string } }
-) {
+export async function PATCH(request: Request) {
+  const roomId = request.url.split("/").pop();
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -85,7 +80,6 @@ export async function PATCH(
   }
 
   const userId = parseInt(session.user.id);
-  const roomId = params.roomId;
 
   try {
     // Get the room with its team to check permissions
@@ -144,10 +138,8 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { roomId: string } }
-) {
+export async function DELETE(request: Request) {
+  const roomId = request.url.split("/").pop();
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -155,7 +147,6 @@ export async function DELETE(
   }
 
   const userId = parseInt(session.user.id);
-  const roomId = params.roomId;
 
   try {
     // Get the room with its team to check permissions
