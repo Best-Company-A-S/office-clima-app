@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 
 /* Curl Command
 
-curl -L -X POST https://clima-app-blush-beta.vercel.app/api/devices/register \
+curl -L -X POST http://localhost:3000/api/device/register \
   -H "Content-Type: application/json" \
   -d '{"device_id": "1234567890", "firmwareVersion": "1.0.0", "modelType": "ESP32"}'
 
