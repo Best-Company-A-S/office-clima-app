@@ -101,7 +101,7 @@ The application uses the following primary models:
 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/clima-app.git
+git clone https://github.com/Best-Company-A-S/office-clima-app.git
 cd clima-app
 ```
 
