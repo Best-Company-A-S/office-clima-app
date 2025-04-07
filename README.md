@@ -50,9 +50,10 @@ Office Clima is a Next.js application designed to monitor and manage indoor clim
 ### Testing
 
 - Playwright for end-to-end testing
-- Automated browser testing across Chromium, Firefox, and WebKit
-- Interactive debugging and test generation
-- CI/CD ready test suite
+- Cross-browser testing (Chrome, Firefox, Safari)
+- Mobile device testing (iOS and Android)
+- Automated test reporting and CI integration
+- Visual regression testing capabilities
 
 ### Monitoring & Error Tracking
 
@@ -109,6 +110,7 @@ The application uses the following primary models:
 
 - Node.js 18+ (recommended: use latest LTS version)
 - PostgreSQL database
+- Playwright browsers (will be installed during setup)
 
 ### Installation
 
@@ -147,7 +149,13 @@ SENTRY_DSN="your-sentry-dsn"
 npx prisma migrate dev
 ```
 
-5. Start the development server
+5. Install Playwright browsers
+
+```bash
+npx playwright install
+```
+
+6. Start the development server
 
 ```bash
 npm run dev
@@ -157,7 +165,90 @@ yarn dev
 bun dev
 ```
 
-6. Open [http://localhost:3000](http://localhost:3000) in your browser
+7. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+## Testing
+
+### Running Tests
+
+The project includes comprehensive end-to-end tests using Playwright. Here are the available test commands:
+
+```bash
+# Run all tests
+npm test
+
+# Run tests with UI mode for debugging
+npm run test:ui
+
+# Run tests in debug mode
+npm run test:debug
+
+# Run tests in headed mode (visible browser)
+npm run test:headed
+
+# Run tests in specific browsers
+npm run test:chrome    # Chrome only
+npm run test:firefox   # Firefox only
+npm run test:safari    # Safari only
+
+# Run mobile device tests
+npm run test:mobile    # iOS and Android viewports
+
+# Run tests in CI mode with reporters
+npm run test:ci
+```
+
+### Test Structure
+
+Tests are organized by feature in the `tests/` directory:
+
+- `auth.spec.ts` - Authentication flows
+- `team.spec.ts` - Team management
+- `room.spec.ts` - Room management
+- `device.spec.ts` - Device management and readings
+- `survey.spec.ts` - Survey creation and responses
+
+### Test Helpers
+
+Common testing utilities are available in `tests/helpers/`:
+
+- `auth.ts` - Authentication helper functions
+  - `loginAsTestUser()` - Log in with test credentials
+  - `signOut()` - Sign out current user
+  - `createTestUser()` - Create a new test user
+  - `setupTestUser()` - Ensure test user exists and is logged in
+
+### Test Best Practices
+
+1. **Test Organization**
+
+   - Group related tests using `test.describe()`
+   - Use clear, descriptive test names
+   - Follow the Arrange-Act-Assert pattern
+
+2. **Test Data**
+
+   - Use unique test data for each test
+   - Clean up test data after tests
+   - Use helper functions for common operations
+
+3. **Test Reliability**
+
+   - Add proper waiting mechanisms
+   - Handle loading states
+   - Use test IDs for reliable element selection
+
+4. **Visual Testing**
+
+   - Screenshots are captured on test failures
+   - Videos are retained for failed tests
+   - Visual comparisons across browsers
+
+5. **CI/CD Integration**
+   - Tests run on every pull request
+   - Parallel test execution in CI
+   - Retries enabled for flaky tests
+   - HTML test reports generated
 
 ## Development Workflow
 
@@ -171,6 +262,7 @@ bun dev
 
 1. Create component files in `components/` directory
 2. Follow existing design patterns and use Shadcn/UI components
+3. Add corresponding test cases in `tests/` directory
 
 ### API Development
 
@@ -178,61 +270,15 @@ bun dev
 2. Use Prisma client for database operations
 3. Implement proper authentication and validation
 4. Use Sentry for error tracking and monitoring
+5. Add API tests in the test suite
 
-### Logging Best Practices
+### Testing New Features
 
-1. Use Sentry breadcrumbs for tracking application flow
-2. Add context to Sentry events for better diagnostics
-3. Capture exceptions with Sentry instead of console.error
-4. Structure logs with categories and severity levels
-
-### Running Tests
-
-1. Run all tests
-
-```bash
-npx playwright test
-```
-
-2. Run tests with UI mode
-
-```bash
-npx playwright test --ui
-```
-
-3. Run tests for specific browser
-
-```bash
-npx playwright test --project=chromium
-```
-
-4. Debug tests
-
-```bash
-npx playwright test --debug
-```
-
-5. Generate tests using Codegen
-
-```bash
-npx playwright codegen
-```
-
-### Writing Tests
-
-1. Create test files in the `tests/` directory
-2. Follow the pattern: `feature-name.spec.ts`
-3. Use page objects for better maintainability
-4. Include both happy path and error scenarios
-5. Add proper assertions and test descriptions
-
-### Test Best Practices
-
-1. Keep tests independent and isolated
-2. Use test data fixtures when needed
-3. Implement proper cleanup after tests
-4. Use meaningful test descriptions
-5. Group related tests using test.describe()
+1. Write tests before implementing features (TDD)
+2. Cover happy path and error scenarios
+3. Test across different browsers and devices
+4. Add visual regression tests if needed
+5. Update test documentation
 
 ## Deployment
 
@@ -241,8 +287,7 @@ The application is configured for deployment on Vercel:
 1. Push to your GitHub repository
 2. Connect repository to Vercel
 3. Set environment variables in the Vercel dashboard
-   - Include Sentry DSN and other required configuration
-4. Deploy
+4. Configure test runs in CI/CD pipeline
 
 ## Monitoring
 
@@ -252,6 +297,7 @@ The application uses Sentry for error tracking and performance monitoring:
 2. Track performance metrics and identify bottlenecks
 3. Monitor release health and user experience
 4. Set up alerts for critical issues
+5. Review test results and coverage
 
 ## License
 
