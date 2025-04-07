@@ -5,56 +5,29 @@ import * as Sentry from "@sentry/nextjs";
 
 export async function POST(request: Request) {
   try {
-    Sentry.addBreadcrumb({
-      category: "device",
-      message: "Device registration request received",
-      level: "info",
-    });
-
     const body = await request.json();
-    const { device_id, firmwareVersion, modelType } = body;
+    const { deviceId, firmwareVersion, modelType } = body;
 
-    Sentry.setContext("device-info", {
-      device_id,
-      firmwareVersion,
-      modelType,
-    });
+    console.log("device_id", deviceId);
+    console.log("firmwareVersion", firmwareVersion);
+    console.log("modelType", modelType);
 
     const findDevice = await prisma.device.findUnique({
       where: {
-        device_id,
+        device_id: deviceId,
       },
     });
 
-    Sentry.addBreadcrumb({
-      category: "device",
-      message: `Existing device check: ${findDevice ? "found" : "not found"}`,
-      level: "info",
-      data: findDevice || {},
-    });
-
     if (findDevice) {
-      Sentry.addBreadcrumb({
-        category: "device",
-        message: "Device already exists",
-        level: "info",
-      });
       return NextResponse.json({ exists: true }, { status: 409 });
     }
 
     const device = await prisma.device.create({
       data: {
-        device_id,
+        device_id: deviceId,
         firmwareVersion,
         model: modelType,
       },
-    });
-
-    Sentry.addBreadcrumb({
-      category: "device",
-      message: "Device created successfully",
-      level: "info",
-      data: device,
     });
 
     return NextResponse.json(device);
