@@ -47,6 +47,13 @@ Office Clima is a Next.js application designed to monitor and manage indoor clim
 - Prisma ORM
 - PostgreSQL database
 
+### Testing
+
+- Playwright for end-to-end testing
+- Automated browser testing across Chromium, Firefox, and WebKit
+- Interactive debugging and test generation
+- CI/CD ready test suite
+
 ### Monitoring & Error Tracking
 
 - Sentry for error tracking, performance monitoring, and logging
@@ -178,6 +185,54 @@ bun dev
 2. Add context to Sentry events for better diagnostics
 3. Capture exceptions with Sentry instead of console.error
 4. Structure logs with categories and severity levels
+
+### Running Tests
+
+1. Run all tests
+
+```bash
+npx playwright test
+```
+
+2. Run tests with UI mode
+
+```bash
+npx playwright test --ui
+```
+
+3. Run tests for specific browser
+
+```bash
+npx playwright test --project=chromium
+```
+
+4. Debug tests
+
+```bash
+npx playwright test --debug
+```
+
+5. Generate tests using Codegen
+
+```bash
+npx playwright codegen
+```
+
+### Writing Tests
+
+1. Create test files in the `tests/` directory
+2. Follow the pattern: `feature-name.spec.ts`
+3. Use page objects for better maintainability
+4. Include both happy path and error scenarios
+5. Add proper assertions and test descriptions
+
+### Test Best Practices
+
+1. Keep tests independent and isolated
+2. Use test data fixtures when needed
+3. Implement proper cleanup after tests
+4. Use meaningful test descriptions
+5. Group related tests using test.describe()
 
 ## Deployment
 
