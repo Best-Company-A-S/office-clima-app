@@ -47,6 +47,12 @@ Office Clima is a Next.js application designed to monitor and manage indoor clim
 - Prisma ORM
 - PostgreSQL database
 
+### Monitoring & Error Tracking
+
+- Sentry for error tracking, performance monitoring, and logging
+- Structured logging with breadcrumbs and context for debugging
+- Automated error capturing across client and server
+
 ## Database Schema
 
 The application uses the following primary models:
@@ -83,6 +89,7 @@ The application uses the following primary models:
 - `/api/devices/pair`: Pair devices with the system
 - `/api/devices/check`: Verify device status
 - `/api/devices/readings`: Record and retrieve device readings
+- `/api/device/register`: Register and manage devices
 
 ### Surveys
 
@@ -124,6 +131,7 @@ NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="your-secret-key"
 GITHUB_CLIENT_ID="your-github-client-id"
 GITHUB_CLIENT_SECRET="your-github-client-secret"
+SENTRY_DSN="your-sentry-dsn"
 ```
 
 4. Run database migrations
@@ -162,6 +170,14 @@ bun dev
 1. Create new routes in the appropriate directory under `app/api/`
 2. Use Prisma client for database operations
 3. Implement proper authentication and validation
+4. Use Sentry for error tracking and monitoring
+
+### Logging Best Practices
+
+1. Use Sentry breadcrumbs for tracking application flow
+2. Add context to Sentry events for better diagnostics
+3. Capture exceptions with Sentry instead of console.error
+4. Structure logs with categories and severity levels
 
 ## Deployment
 
@@ -170,7 +186,17 @@ The application is configured for deployment on Vercel:
 1. Push to your GitHub repository
 2. Connect repository to Vercel
 3. Set environment variables in the Vercel dashboard
+   - Include Sentry DSN and other required configuration
 4. Deploy
+
+## Monitoring
+
+The application uses Sentry for error tracking and performance monitoring:
+
+1. View errors and exceptions in the Sentry dashboard
+2. Track performance metrics and identify bottlenecks
+3. Monitor release health and user experience
+4. Set up alerts for critical issues
 
 ## License
 

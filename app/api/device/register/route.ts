@@ -1,13 +1,24 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 
 export async function POST(request: Request) {
   try {
-    console.log("Device registration request received");
+    Sentry.addBreadcrumb({
+      category: "device",
+      message: "Device registration request received",
+      level: "info",
+    });
+
     const body = await request.json();
     const { device_id, firmwareVersion, modelType } = body;
-    console.log("Request data:", { device_id, firmwareVersion, modelType });
+
+    Sentry.setContext("device-info", {
+      device_id,
+      firmwareVersion,
+      modelType,
+    });
 
     const findDevice = await prisma.device.findUnique({
       where: {
@@ -15,10 +26,19 @@ export async function POST(request: Request) {
       },
     });
 
-    console.log("Existing device:", findDevice);
+    Sentry.addBreadcrumb({
+      category: "device",
+      message: `Existing device check: ${findDevice ? "found" : "not found"}`,
+      level: "info",
+      data: findDevice || {},
+    });
 
     if (findDevice) {
-      console.log("Device already exists");
+      Sentry.addBreadcrumb({
+        category: "device",
+        message: "Device already exists",
+        level: "info",
+      });
       return NextResponse.json({ exists: true }, { status: 409 });
     }
 
@@ -30,10 +50,16 @@ export async function POST(request: Request) {
       },
     });
 
-    console.log("Device created:", device);
+    Sentry.addBreadcrumb({
+      category: "device",
+      message: "Device created successfully",
+      level: "info",
+      data: device,
+    });
+
     return NextResponse.json(device);
   } catch (error) {
-    console.error("Error in device registration:", error);
+    Sentry.captureException(error);
     return NextResponse.json({ error: "Registration failed" }, { status: 500 });
   }
 }
@@ -50,13 +76,24 @@ export async function GET(request: Request) {
   const session = await auth();
 
   if (!session) {
+    Sentry.addBreadcrumb({
+      category: "auth",
+      message: "Unauthorized access attempt to GET /api/device/register",
+      level: "warning",
+    });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const devices = await prisma.device.findMany();
+    Sentry.addBreadcrumb({
+      category: "device",
+      message: `Successfully fetched ${devices.length} devices`,
+      level: "info",
+    });
     return NextResponse.json(devices);
   } catch (error) {
+    Sentry.captureException(error);
     return NextResponse.json(
       { error: "Failed to fetch devices" },
       { status: 500 }
@@ -68,26 +105,54 @@ export async function PUT(request: Request) {
   const session = await auth();
 
   if (!session) {
+    Sentry.addBreadcrumb({
+      category: "auth",
+      message: "Unauthorized access attempt to PUT /api/device/register",
+      level: "warning",
+    });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { device_id, name, description, firmwareVersion, modelType } = body;
+  try {
+    const body = await request.json();
+    const { device_id, name, description, firmwareVersion, modelType } = body;
 
-  const device = await prisma.device.update({
-    where: { device_id },
-    data: {
-      name: name,
-      description: description,
-      isPaired: true,
-      pairedAt: new Date(),
-      lastSeenAt: new Date(),
-      firmwareVersion: firmwareVersion,
-      model: modelType,
-    },
-  });
+    Sentry.setContext("device-update", {
+      device_id,
+      name,
+      description,
+      firmwareVersion,
+      modelType,
+    });
 
-  return NextResponse.json(device);
+    const device = await prisma.device.update({
+      where: { device_id },
+      data: {
+        name: name,
+        description: description,
+        isPaired: true,
+        pairedAt: new Date(),
+        lastSeenAt: new Date(),
+        firmwareVersion: firmwareVersion,
+        model: modelType,
+      },
+    });
+
+    Sentry.addBreadcrumb({
+      category: "device",
+      message: "Device updated successfully",
+      level: "info",
+      data: { device_id },
+    });
+
+    return NextResponse.json(device);
+  } catch (error) {
+    Sentry.captureException(error);
+    return NextResponse.json(
+      { error: "Failed to update device" },
+      { status: 500 }
+    );
+  }
 }
 
 /* Curl Command
