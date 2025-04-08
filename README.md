@@ -803,33 +803,3 @@ const assessRoomClimate = (
   }
 };
 ```
-
-## Future Development Roadmap
-
-- **Q3 2023**: Enhanced room comparison tools, expanded device support
-- **Q4 2023**: Floor plan visualization, advanced reporting features
-- **Q1 2024**: AI-powered climate optimization suggestions
-- **Q2 2024**: Mobile application for iOS and Android
-- **Q3 2024**: Integration with building management systems (BMS)
-
-## Contributing
-
-We welcome contributions to the Office Clima project! Please see our [Contributing Guidelines](CONTRIBUTING.md) for more information on how to get involved.
-
-## License
-
-[MIT License](LICENSE)
-
-## Credits
-
-Developed by the Office Clima team for the indoor climate monitoring needs of modern workplaces.
-
----
-
-<div align="center">
-  <p>
-    <a href="https://github.com/yourusername/clima-app">GitHub</a> •
-    <a href="https://yourwebsite.com">Website</a> •
-    <a href="mailto:contact@yourcompany.com">Contact</a>
-  </p>
-</div>
