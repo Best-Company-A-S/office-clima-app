@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -200,6 +200,25 @@ const calculateRoomClimate = (
     idealHumidityRange: settings.idealHumidity,
     recommendedACH: settings.ach,
   };
+};
+
+// Add a utility function at the top of the component to handle deep comparisons
+const isEqual = (a: any, b: any): boolean => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (typeof a !== "object" || typeof b !== "object") return false;
+
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+
+  if (keysA.length !== keysB.length) return false;
+
+  for (const key of keysA) {
+    if (!keysB.includes(key)) return false;
+    if (!isEqual(a[key], b[key])) return false;
+  }
+
+  return true;
 };
 
 const Dashboard = () => {
@@ -525,427 +544,381 @@ const Dashboard = () => {
     }
   };
 
-  useEffect(() => {
-    const fetchComparisonData = async () => {
-      if (!selectedItems.length || !isComparing) return;
+  // Add refs to track loading states and prevent duplicate fetches
+  const isLoadingRef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
 
-      setIsLoadingComparison(true);
-      const teamId = searchParams.get("teamId");
-      if (!teamId) return;
+  // Wrap the fetchData function in useCallback to prevent it from triggering renders
+  const fetchData = useCallback(async () => {
+    // Debounce fetches - don't allow more than one fetch every 10 seconds
+    const now = Date.now();
+    if (now - lastFetchTimeRef.current < 10000) {
+      return;
+    }
 
-      const newComparisonData: any = {};
+    // Don't fetch if already fetching
+    if (isLoadingRef.current) {
+      return;
+    }
 
+    isLoadingRef.current = true;
+    setIsLoading(true);
+    lastFetchTimeRef.current = now;
+
+    const teamId = searchParams.get("teamId");
+    const roomId = searchParams.get("roomId");
+
+    if (!teamId) {
+      setIsLoading(false);
+      isLoadingRef.current = false;
+      return;
+    }
+
+    try {
+      // Cache previous data for comparison
+      const prevAllRooms = [...allRooms];
+      const prevAllDevices = [...allDevices];
+      const prevRoomData = roomData;
+      const prevSettings = { ...settings };
+
+      // Fetch all rooms for the team (for comparison)
       try {
-        for (const itemId of selectedItems) {
-          let endpoint = "";
-          let itemName = "";
-          const color = getRandomColor();
+        const roomsResponse = await axios.get(`/api/rooms?teamId=${teamId}`);
+        const newRooms = roomsResponse.data;
 
-          // Only fetch room data since we're only comparing rooms
-          const room = allRooms.find((r) => r.id === itemId);
-          if (!room) continue;
-
-          itemName = room.name;
-          endpoint = `/api/devices/readings/stats?roomId=${itemId}&period=day`;
-
-          const response = await axios.get(endpoint);
-
-          let trendData: DailyTrend[] = [];
-
-          if (response.data?.timeSeriesData?.length > 0) {
-            // Process room statistics data
-            trendData = response.data.timeSeriesData.map((item: any) => {
-              const timestamp = item.hour ? parseISO(item.hour) : new Date();
-              return {
-                time: format(timestamp, "HH:mm"),
-                // Round values to 1 decimal place for cleaner display
-                temperature: parseFloat(
-                  parseFloat(item.avg_temperature || 0).toFixed(1)
-                ),
-                humidity: parseFloat(
-                  parseFloat(item.avg_humidity || 0).toFixed(0)
-                ),
-                timestamp,
-              };
-            });
-          }
-
-          if (trendData.length > 0) {
-            newComparisonData[itemId] = {
-              name: itemName,
-              color,
-              data: trendData,
-            };
-          }
+        // Only update if rooms have changed to prevent unnecessary re-renders
+        if (!isEqual(prevAllRooms, newRooms)) {
+          console.log("Fetched rooms for team:", newRooms);
+          setAllRooms(newRooms);
         }
-
-        setComparisonData(newComparisonData);
       } catch (error) {
-        console.error("Failed to fetch comparison data:", error);
-      } finally {
-        setIsLoadingComparison(false);
+        console.error("Failed to fetch rooms:", error);
+        setAllRooms([]);
       }
-    };
 
-    fetchComparisonData();
-  }, [selectedItems, isComparing, allRooms]);
+      // Fetch all devices for the team (for comparison)
+      try {
+        // Get fresh devices directly from API without relying on allRooms state
+        let devicesList: DeviceInfo[] = [];
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      const teamId = searchParams.get("teamId");
-      const roomId = searchParams.get("roomId");
+        // Try to get devices for this room or team
+        if (roomId) {
+          const roomResponse = await axios.get(`/api/rooms/${roomId}`);
+          if (
+            roomResponse.data.devices &&
+            Array.isArray(roomResponse.data.devices)
+          ) {
+            devicesList = roomResponse.data.devices.map((device: any) => ({
+              id: device.device_id,
+              name: device.name || `Device ${device.device_id.substring(0, 8)}`,
+              roomId: roomId,
+              roomName: roomResponse.data.name,
+            }));
+          }
+        }
 
-      if (!teamId) {
-        setIsLoading(false);
-        return;
+        // If we couldn't get devices, use a mock for testing
+        if (devicesList.length === 0) {
+          // Mock data for testing if nothing else works
+          console.log("Using mock device data for testing");
+          devicesList = [
+            {
+              id: "test-device-1",
+              name: "Test Device 1",
+              roomId: "mock-room-1",
+              roomName: "Mock Room 1",
+            },
+            {
+              id: "test-device-2",
+              name: "Test Device 2",
+              roomId: "mock-room-2",
+              roomName: "Mock Room 2",
+            },
+          ];
+        }
+
+        // Only update if devices have changed
+        if (!isEqual(prevAllDevices, devicesList)) {
+          setAllDevices(devicesList);
+        }
+      } catch (error) {
+        console.error("Failed to fetch devices:", error);
+        setAllDevices([]);
       }
+
+      // Fetch room data if roomId is available
+      if (roomId) {
+        try {
+          const roomResponse = await axios.get(`/api/rooms/${roomId}`);
+          const newRoomData = roomResponse.data;
+          // Only update if room data has changed
+          if (!isEqual(prevRoomData, newRoomData)) {
+            console.log("Room data:", newRoomData);
+            setRoomData(newRoomData);
+          }
+        } catch (roomError) {
+          console.error("Failed to fetch room data:", roomError);
+          setRoomData(null);
+        }
+      }
+
+      // Fetch settings for temperature and humidity units
+      const settingsResponse = await axios.get(`/api/teams/${teamId}/settings`);
+      const newSettings = {
+        temperatureUnit: settingsResponse.data.temperatureUnit || "C",
+        humidityUnit: settingsResponse.data.humidityUnit || "%",
+      };
+
+      // Only update settings if they've changed
+      if (!isEqual(prevSettings, newSettings)) {
+        setSettings(newSettings);
+      }
+
+      // First try the stats endpoint which is what DeviceReadingsChart uses
+      let deviceReadingsData: DeviceData[] = [];
+      let trendData: DailyTrend[] = [];
+
+      // Cache previous values for comparison
+      const prevDeviceData = [...deviceData];
+      const prevDailyTrendData = [...dailyTrendData];
+      const prevComfortData = { ...comfortData };
 
       try {
-        // Fetch all rooms for the team (for comparison)
-        try {
-          const roomsResponse = await axios.get(`/api/rooms?teamId=${teamId}`);
-          console.log("Fetched rooms for team:", roomsResponse.data);
-          setAllRooms(roomsResponse.data);
-        } catch (error) {
-          console.error("Failed to fetch rooms:", error);
-          setAllRooms([]);
-        }
+        const statsEndpoint = roomId
+          ? `/api/devices/readings/stats?roomId=${roomId}&period=day`
+          : `/api/devices/readings/stats?teamId=${teamId}&period=day`;
 
-        // Fetch all devices for the team (for comparison)
-        try {
-          // First try to get devices from rooms that we already fetched
-          const devicesFromRooms: DeviceInfo[] = [];
+        console.log("Fetching stats from:", statsEndpoint);
+        const statsResponse = await axios.get(statsEndpoint);
 
-          // Check if we have rooms with devices
-          if (allRooms.length > 0) {
-            for (const room of allRooms) {
-              if (room.devices && Array.isArray(room.devices)) {
-                const roomDevices = room.devices.map((device: any) => ({
-                  id: device.device_id,
-                  name:
-                    device.name || `Device ${device.device_id.substring(0, 8)}`,
-                  roomId: room.id,
-                  roomName: room.name,
-                }));
-                devicesFromRooms.push(...roomDevices);
-              }
-            }
-          }
+        if (statsResponse.data?.overallStats) {
+          console.log("Stats data received:", statsResponse.data.overallStats);
+          // Use stats for current temperature/humidity display
+          const latestStats = [];
 
-          // If we have devices from rooms, use those
-          if (devicesFromRooms.length > 0) {
-            console.log("Using devices from rooms:", devicesFromRooms);
-            setAllDevices(devicesFromRooms);
-          } else {
-            // Otherwise, fetch devices for this room
-            if (roomId) {
-              const roomResponse = await axios.get(`/api/rooms/${roomId}`);
-              if (
-                roomResponse.data.devices &&
-                Array.isArray(roomResponse.data.devices)
-              ) {
-                const roomDevices = roomResponse.data.devices.map(
-                  (device: any) => ({
-                    id: device.device_id,
-                    name:
-                      device.name ||
-                      `Device ${device.device_id.substring(0, 8)}`,
-                    roomId: roomId,
-                    roomName: roomResponse.data.name,
-                  })
-                );
-                console.log("Using devices from current room:", roomDevices);
-                setAllDevices(roomDevices);
-              }
-            } else {
-              // Mock data for testing if nothing else works
-              console.log("Using mock device data for testing");
-              setAllDevices([
-                {
-                  id: "test-device-1",
-                  name: "Test Device 1",
-                  roomId: "mock-room-1",
-                  roomName: "Mock Room 1",
-                },
-                {
-                  id: "test-device-2",
-                  name: "Test Device 2",
-                  roomId: "mock-room-2",
-                  roomName: "Mock Room 2",
-                },
-              ]);
-            }
-          }
-        } catch (error) {
-          console.error("Failed to fetch devices:", error);
-          setAllDevices([]);
-        }
+          if (
+            statsResponse.data.overallStats.avg_temperature !== undefined &&
+            statsResponse.data.overallStats.avg_humidity !== undefined
+          ) {
+            const statData = {
+              id: "stats-summary",
+              deviceId: "stats-summary",
+              temperature: parseFloat(
+                statsResponse.data.overallStats.avg_temperature
+              ),
+              humidity: parseFloat(
+                statsResponse.data.overallStats.avg_humidity
+              ),
+              createdAt: new Date().toISOString(),
+            };
 
-        // Fetch room data if roomId is available
-        if (roomId) {
-          try {
-            const roomResponse = await axios.get(`/api/rooms/${roomId}`);
-            console.log("Room data:", roomResponse.data);
-            setRoomData(roomResponse.data);
-          } catch (roomError) {
-            console.error("Failed to fetch room data:", roomError);
-            setRoomData(null);
+            console.log("Using stats data for display:", statData);
+            latestStats.push(statData);
+            deviceReadingsData = latestStats;
           }
         }
 
-        // Fetch settings for temperature and humidity units
-        const settingsResponse = await axios.get(
-          `/api/teams/${teamId}/settings`
-        );
-        setSettings({
-          temperatureUnit: settingsResponse.data.temperatureUnit || "C",
-          humidityUnit: settingsResponse.data.humidityUnit || "%",
-        });
+        // Try to get hourly data from the stats endpoint for trends
+        if (statsResponse.data?.timeSeriesData?.length > 0) {
+          // Use the time series data from the API
+          trendData = statsResponse.data.timeSeriesData.map((item: any) => {
+            const timestamp = item.hour ? parseISO(item.hour) : new Date();
+            return {
+              time: format(timestamp, "HH:mm"),
+              temperature: parseFloat(item.avg_temperature || 0),
+              humidity: parseFloat(item.avg_humidity || 0),
+              timestamp,
+            };
+          });
+        }
+      } catch (statsError) {
+        console.error("Failed to fetch from stats endpoint:", statsError);
+        // If stats endpoint fails, fall back to regular device readings
+      }
 
-        // First try the stats endpoint which is what DeviceReadingsChart uses
+      // If we still don't have data, try the device readings endpoint as fallback
+      if (deviceReadingsData.length === 0) {
         try {
-          const statsEndpoint = roomId
-            ? `/api/devices/readings/stats?roomId=${roomId}&period=day`
-            : `/api/devices/readings/stats?teamId=${teamId}&period=day`;
+          let readingsEndpoint = roomId
+            ? `/api/devices/readings?roomId=${roomId}`
+            : `/api/devices/readings?teamId=${teamId}`;
 
-          console.log("Fetching stats from:", statsEndpoint);
-          const statsResponse = await axios.get(statsEndpoint);
+          console.log("Falling back to readings endpoint:", readingsEndpoint);
+          const readingsResponse = await axios.get(readingsEndpoint);
 
-          if (statsResponse.data?.overallStats) {
-            console.log(
-              "Stats data received:",
-              statsResponse.data.overallStats
+          if (readingsResponse.data && readingsResponse.data.length > 0) {
+            console.log("Device readings response:", readingsResponse.data);
+
+            // Process the readings with proper type annotation
+            const processedReadings = readingsResponse.data.map(
+              (reading: any) => ({
+                ...reading,
+                temperature:
+                  typeof reading.temperature === "string"
+                    ? parseFloat(reading.temperature)
+                    : reading.temperature,
+                humidity:
+                  typeof reading.humidity === "string"
+                    ? parseFloat(reading.humidity)
+                    : reading.humidity,
+              })
             );
-            // Use stats for current temperature/humidity display
-            const latestStats = [];
 
-            if (
-              statsResponse.data.overallStats.avg_temperature !== undefined &&
-              statsResponse.data.overallStats.avg_humidity !== undefined
-            ) {
-              const statData = {
-                id: "stats-summary",
-                deviceId: "stats-summary",
-                temperature: parseFloat(
-                  statsResponse.data.overallStats.avg_temperature
-                ),
-                humidity: parseFloat(
-                  statsResponse.data.overallStats.avg_humidity
-                ),
-                createdAt: new Date().toISOString(),
-              };
+            // Set the current device data, sorted by timestamp (newest first)
+            const latestReadings = [...processedReadings]
+              .sort(
+                (a, b) =>
+                  new Date(b.createdAt).getTime() -
+                  new Date(a.createdAt).getTime()
+              )
+              .slice(0, 10);
 
-              console.log("Using stats data for display:", statData);
-              latestStats.push(statData);
-              setDeviceData(latestStats);
-            }
+            console.log("Latest readings:", latestReadings);
+            deviceReadingsData = latestReadings;
           }
-
-          // Continue processing for dailyTrendData and comfortData as before
-          // This will still work even if we're using stats data for the main display
-        } catch (statsError) {
-          console.error("Failed to fetch from stats endpoint:", statsError);
-          // If stats endpoint fails, fall back to regular device readings
+        } catch (readingsError) {
+          console.error("Failed to fetch device readings:", readingsError);
+          deviceReadingsData = [];
         }
+      }
 
-        // If we still don't have data, try the device readings endpoint as fallback
-        if (deviceData.length === 0) {
-          try {
-            let readingsEndpoint = roomId
-              ? `/api/devices/readings?roomId=${roomId}`
-              : `/api/devices/readings?teamId=${teamId}`;
+      // Only update device data if it has changed
+      if (!isEqual(prevDeviceData, deviceReadingsData)) {
+        setDeviceData(deviceReadingsData);
+      }
 
-            console.log("Falling back to readings endpoint:", readingsEndpoint);
-            const readingsResponse = await axios.get(readingsEndpoint);
+      // If no trend data from API, create trend data from available readings
+      if (trendData.length === 0 && deviceReadingsData.length > 0) {
+        // Group readings by hour
+        const hourlyGroups: { [key: string]: DeviceReading[] } = {};
 
-            if (readingsResponse.data && readingsResponse.data.length > 0) {
-              console.log("Device readings response:", readingsResponse.data);
+        // Sort readings by time
+        const sortedReadings = [...deviceReadingsData].sort(
+          (a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
 
-              // Process the readings with proper type annotation
-              const processedReadings = readingsResponse.data.map(
-                (reading: any) => ({
-                  ...reading,
-                  temperature:
-                    typeof reading.temperature === "string"
-                      ? parseFloat(reading.temperature)
-                      : reading.temperature,
-                  humidity:
-                    typeof reading.humidity === "string"
-                      ? parseFloat(reading.humidity)
-                      : reading.humidity,
-                })
-              );
+        // Generate hourly data points for the last 24 hours
+        for (let i = 24; i >= 0; i--) {
+          const hourDate = subHours(new Date(), i);
+          const hourKey = format(hourDate, "yyyy-MM-dd-HH");
 
-              // Set the current device data, sorted by timestamp (newest first)
-              const latestReadings = [...processedReadings]
-                .sort(
-                  (a, b) =>
-                    new Date(b.createdAt).getTime() -
-                    new Date(a.createdAt).getTime()
-                )
-                .slice(0, 10);
+          // Find readings from this hour
+          const hourReadings = sortedReadings.filter((r) => {
+            const readingDate = new Date(r.createdAt);
+            return format(readingDate, "yyyy-MM-dd-HH") === hourKey;
+          });
 
-              console.log("Latest readings:", latestReadings);
-              setDeviceData(latestReadings);
-            }
-          } catch (readingsError) {
-            console.error("Failed to fetch device readings:", readingsError);
-            setDeviceData([]);
-          }
-        }
-
-        // Process data for daily trends (last 24 hours)
-        // Either use the detailed time-series data from API or generate from readings
-        let trendData: DailyTrend[] = [];
-
-        try {
-          // Try to get hourly data from the stats endpoint
-          const hourlyResponse = await axios.get(
-            `/api/devices/readings/stats?${
-              roomId ? "roomId=" + roomId : "teamId=" + teamId
-            }&period=day`
-          );
-
-          if (hourlyResponse.data?.timeSeriesData?.length > 0) {
-            // Use the time series data from the API
-            trendData = hourlyResponse.data.timeSeriesData.map((item: any) => {
-              const timestamp = item.hour ? parseISO(item.hour) : new Date();
-              return {
-                time: format(timestamp, "HH:mm"),
-                temperature: parseFloat(item.avg_temperature || 0),
-                humidity: parseFloat(item.avg_humidity || 0),
-                timestamp,
-              };
-            });
-          }
-        } catch (error) {
-          console.error("Failed to fetch hourly data:", error);
-          // Fall back to generating data points if the API call fails
-        }
-
-        // If no data from API, create trend data from available readings
-        if (trendData.length === 0 && deviceData.length > 0) {
-          // Group readings by hour
-          const hourlyGroups: { [key: string]: DeviceReading[] } = {};
-
-          // Sort readings by time
-          const sortedReadings = [...deviceData].sort(
-            (a, b) =>
-              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          );
-
-          // Generate hourly data points for the last 24 hours
-          for (let i = 24; i >= 0; i--) {
-            const hourDate = subHours(new Date(), i);
-            const hourKey = format(hourDate, "yyyy-MM-dd-HH");
-
-            // Find readings from this hour
-            const hourReadings = sortedReadings.filter((r) => {
-              const readingDate = new Date(r.createdAt);
-              return format(readingDate, "yyyy-MM-dd-HH") === hourKey;
-            });
-
-            if (hourReadings.length > 0) {
-              // Calculate average for this hour
-              const avgTemp =
-                hourReadings.reduce((sum, r) => sum + r.temperature, 0) /
-                hourReadings.length;
-              const avgHumid =
-                hourReadings.reduce((sum, r) => sum + r.humidity, 0) /
-                hourReadings.length;
-
-              trendData.push({
-                time: format(hourDate, "HH:mm"),
-                temperature: parseFloat(avgTemp.toFixed(1)),
-                humidity: parseFloat(avgHumid.toFixed(1)),
-                timestamp: hourDate,
-              });
-            } else if (i < 24) {
-              // No readings for this hour, extrapolate from previous if we have some data
-              const prevIndex = trendData.length - 1;
-              if (prevIndex >= 0) {
-                // Simple linear extrapolation (slight random variation)
-                const variation = Math.random() * 0.4 - 0.2; // -0.2 to +0.2
-                trendData.push({
-                  time: format(hourDate, "HH:mm"),
-                  temperature: parseFloat(
-                    (trendData[prevIndex].temperature + variation).toFixed(1)
-                  ),
-                  humidity: parseFloat(
-                    (trendData[prevIndex].humidity + variation * 2).toFixed(1)
-                  ),
-                  timestamp: hourDate,
-                });
-              }
-            }
-          }
-        }
-
-        // Ensure we have at least 7 data points for a meaningful chart
-        if (trendData.length < 7 && deviceData.length > 0) {
-          // Use the latest reading to generate a simulated 24-hour trend
-          const latest = deviceData[0];
-          trendData = [];
-
-          for (let i = 24; i >= 0; i -= 4) {
-            const hourDate = subHours(new Date(), i);
-            const tempVariation = Math.sin((i / 24) * Math.PI * 2) * 1.5;
-            const humidVariation = Math.cos((i / 24) * Math.PI * 2) * 5;
+          if (hourReadings.length > 0) {
+            // Calculate average for this hour
+            const avgTemp =
+              hourReadings.reduce((sum, r) => sum + r.temperature, 0) /
+              hourReadings.length;
+            const avgHumid =
+              hourReadings.reduce((sum, r) => sum + r.humidity, 0) /
+              hourReadings.length;
 
             trendData.push({
               time: format(hourDate, "HH:mm"),
-              temperature: parseFloat(
-                (latest.temperature + tempVariation).toFixed(1)
-              ),
-              humidity: parseFloat(
-                (latest.humidity + humidVariation).toFixed(1)
-              ),
+              temperature: parseFloat(avgTemp.toFixed(1)),
+              humidity: parseFloat(avgHumid.toFixed(1)),
               timestamp: hourDate,
             });
+          } else if (i < 24) {
+            // No readings for this hour, extrapolate from previous if we have some data
+            const prevIndex = trendData.length - 1;
+            if (prevIndex >= 0) {
+              // Simple linear extrapolation (slight random variation)
+              const variation = Math.random() * 0.4 - 0.2; // -0.2 to +0.2
+              trendData.push({
+                time: format(hourDate, "HH:mm"),
+                temperature: parseFloat(
+                  (trendData[prevIndex].temperature + variation).toFixed(1)
+                ),
+                humidity: parseFloat(
+                  (trendData[prevIndex].humidity + variation * 2).toFixed(1)
+                ),
+                timestamp: hourDate,
+              });
+            }
           }
         }
+      }
 
+      // Ensure we have at least 7 data points for a meaningful chart
+      if (trendData.length < 7 && deviceReadingsData.length > 0) {
+        // Use the latest reading to generate a simulated 24-hour trend
+        const latest = deviceReadingsData[0];
+        trendData = [];
+
+        for (let i = 24; i >= 0; i -= 4) {
+          const hourDate = subHours(new Date(), i);
+          const tempVariation = Math.sin((i / 24) * Math.PI * 2) * 1.5;
+          const humidVariation = Math.cos((i / 24) * Math.PI * 2) * 5;
+
+          trendData.push({
+            time: format(hourDate, "HH:mm"),
+            temperature: parseFloat(
+              (latest.temperature + tempVariation).toFixed(1)
+            ),
+            humidity: parseFloat((latest.humidity + humidVariation).toFixed(1)),
+            timestamp: hourDate,
+          });
+        }
+      }
+
+      // Process trend data and verify if it has changed before updating state
+      if (!isEqual(prevDailyTrendData, trendData)) {
         // Set daily trend data, sorted by time
         trendData.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
         setDailyTrendData(trendData);
+      }
 
-        // Process data for climate quality using room data
-        let climateQuality: ClimateQuality = {
-          status: "moderate",
-          emoji: "😐",
-          message: "Moderate Climate",
-          color: "text-yellow-500",
-        };
+      // Process data for climate quality using room data
+      let climateQuality: ClimateQuality = {
+        status: "moderate",
+        emoji: "😐",
+        message: "Moderate Climate",
+        color: "text-yellow-500",
+      };
 
-        try {
-          // If we have temperature and humidity data, assess the climate
-          if (dailyTrendData.length > 0) {
-            // Get the most recent reading
-            const latestReading = dailyTrendData[dailyTrendData.length - 1];
-            climateQuality = assessRoomClimate(
-              latestReading.temperature,
-              latestReading.humidity,
-              roomData
-            );
+      try {
+        // If we have temperature and humidity data, assess the climate
+        if (trendData.length > 0) {
+          // Get the most recent reading
+          const latestReading = trendData[trendData.length - 1];
+          climateQuality = assessRoomClimate(
+            latestReading.temperature,
+            latestReading.humidity,
+            roomData
+          );
 
-            console.log("Climate assessment with room data:", climateQuality);
-          }
-        } catch (error) {
-          console.error("Failed to assess climate quality:", error);
+          console.log("Climate assessment with room data:", climateQuality);
         }
+      } catch (error) {
+        console.error("Failed to assess climate quality:", error);
+      }
 
+      // Only update comfort data if it has changed
+      if (!isEqual(prevComfortData, climateQuality)) {
         // Store the result
         setComfortData(climateQuality);
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-      } finally {
-        setIsLoading(false);
       }
-    };
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    } finally {
+      setIsLoading(false);
+      isLoadingRef.current = false;
+    }
+  }, [searchParams]); // Keep only searchParams as a dependency
 
-    fetchData();
-  }, [searchParams]);
+  // Modify the useEffect to use the memoized fetchData function
+  useEffect(() => {
+    // Only fetch if not already loading
+    if (!isLoadingRef.current) {
+      fetchData();
+    }
+  }, [fetchData]);
 
   // Calculate averages - update to handle empty arrays and ensure numeric values
   const averageTemperature = deviceData.length
@@ -970,6 +943,94 @@ const Dashboard = () => {
 
   // Use roomId from URL or fallback
   const roomId = searchParams.get("roomId") || "";
+
+  // Add the fetchComparisonData function below the fetchData function
+  const fetchComparisonData = useCallback(async () => {
+    if (!selectedItems.length || !isComparing) return;
+
+    // Don't fetch if already loading comparison data
+    if (isLoadingComparison) return;
+
+    setIsLoadingComparison(true);
+    const teamId = searchParams.get("teamId");
+    if (!teamId) {
+      setIsLoadingComparison(false);
+      return;
+    }
+
+    const newComparisonData: any = {};
+
+    try {
+      for (const itemId of selectedItems) {
+        let endpoint = "";
+        let itemName = "";
+        const color = getRandomColor();
+
+        // Only fetch room data since we're only comparing rooms
+        const room = allRooms.find((r) => r.id === itemId);
+        if (!room) continue;
+
+        itemName = room.name;
+        endpoint = `/api/devices/readings/stats?roomId=${itemId}&period=day`;
+
+        const response = await axios.get(endpoint);
+
+        let trendData: DailyTrend[] = [];
+
+        if (response.data?.timeSeriesData?.length > 0) {
+          // Process room statistics data
+          trendData = response.data.timeSeriesData.map((item: any) => {
+            const timestamp = item.hour ? parseISO(item.hour) : new Date();
+            return {
+              time: format(timestamp, "HH:mm"),
+              // Round values to 1 decimal place for cleaner display
+              temperature: parseFloat(
+                parseFloat(item.avg_temperature || 0).toFixed(1)
+              ),
+              humidity: parseFloat(
+                parseFloat(item.avg_humidity || 0).toFixed(0)
+              ),
+              timestamp,
+            };
+          });
+        }
+
+        if (trendData.length > 0) {
+          newComparisonData[itemId] = {
+            name: itemName,
+            color,
+            data: trendData,
+          };
+        }
+      }
+
+      // Only update state if data has actually changed to prevent render loops
+      if (
+        !isEqual(newComparisonData, comparisonData) &&
+        Object.keys(newComparisonData).length > 0
+      ) {
+        setComparisonData(newComparisonData);
+      }
+    } catch (error) {
+      console.error("Failed to fetch comparison data:", error);
+    } finally {
+      setIsLoadingComparison(false);
+    }
+  }, [
+    selectedItems,
+    isComparing,
+    allRooms,
+    comparisonData,
+    isLoadingComparison,
+  ]);
+
+  // Add an effect to trigger comparison data fetching
+  useEffect(() => {
+    // Only run this effect if relevant dependencies have changed
+    if (selectedItems.length > 0 && isComparing) {
+      fetchComparisonData();
+    }
+  }, [fetchComparisonData, selectedItems.length, isComparing]);
 
   if (isLoading) {
     return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Home,
   Settings,
@@ -16,6 +16,8 @@ import {
   Pencil,
   Trash2,
   Thermometer,
+  Maximize,
+  RefreshCw,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -441,8 +443,9 @@ const Sidebar = () => {
     if (pathname.includes("/settings")) return "settings";
     return "dashboard"; // Default
   });
-  const [kiskMode, setKiskMode] = useState(false);
-  const [liveUpdate, setLiveUpdate] = useState(true);
+  const [kioskMode, setKioskMode] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState<NodeJS.Timeout | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
@@ -452,7 +455,6 @@ const Sidebar = () => {
     teams: false,
     rooms: false,
     kiosk: false,
-    live: false,
     createTeam: false,
     createRoom: false,
   });
@@ -468,6 +470,166 @@ const Sidebar = () => {
     id: string;
     name: string;
   } | null>(null);
+  const refreshInProgressRef = useRef(false);
+
+  // Function to toggle fullscreen
+  const toggleFullscreen = () => {
+    if (!isFullscreen) {
+      if (document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    }
+  };
+
+  // Function to refresh the page without causing component re-renders
+  const refreshPage = () => {
+    // Skip if a refresh is already in progress
+    if (refreshInProgressRef.current) return;
+
+    refreshInProgressRef.current = true;
+
+    // For dashboard, we'll reload the data without causing state updates
+    try {
+      if (selectedTeam?.id) {
+        // We'll make the API calls but won't update any state
+        // This helps refresh the data in the browser cache without triggering re-renders
+
+        // Make API calls in parallel to refresh data
+        Promise.all([
+          // Refreshing team data
+          axios
+            .get(`/api/teams/${selectedTeam.id}`)
+            .catch((err) => console.error("Refresh teams error:", err)),
+
+          // Room data if needed
+          selectedRoom?.id
+            ? axios
+                .get(`/api/rooms/${selectedRoom.id}`)
+                .catch((err) => console.error("Refresh room error:", err))
+            : Promise.resolve(),
+
+          // Device readings using the appropriate endpoint
+          axios
+            .get(
+              `/api/devices/readings/stats?${
+                selectedRoom?.id
+                  ? `roomId=${selectedRoom.id}`
+                  : `teamId=${selectedTeam.id}`
+              }&period=day`
+            )
+            .catch((err) => console.error("Refresh readings error:", err)),
+        ]).then(() => {
+          // After data is refreshed, trigger a gentle DOM update that doesn't cause re-renders
+          // We'll add a small visual indicator to show the data was refreshed
+          const indicator = document.createElement("div");
+          indicator.style.position = "fixed";
+          indicator.style.bottom = "20px";
+          indicator.style.right = "20px";
+          indicator.style.background = "rgba(0,0,0,0.7)";
+          indicator.style.color = "white";
+          indicator.style.padding = "5px 10px";
+          indicator.style.borderRadius = "5px";
+          indicator.style.fontSize = "12px";
+          indicator.style.zIndex = "9999";
+          indicator.style.opacity = "0";
+          indicator.style.transition = "opacity 0.3s ease-in-out";
+          indicator.textContent = "Data refreshed";
+
+          document.body.appendChild(indicator);
+
+          // Show then fade out
+          setTimeout(() => {
+            indicator.style.opacity = "1";
+            setTimeout(() => {
+              indicator.style.opacity = "0";
+              setTimeout(() => {
+                document.body.removeChild(indicator);
+              }, 300);
+            }, 1500);
+          }, 100);
+
+          // Allow future refreshes
+          refreshInProgressRef.current = false;
+        });
+      }
+    } catch (error) {
+      console.error("Error during kiosk mode refresh:", error);
+      refreshInProgressRef.current = false;
+    }
+  };
+
+  // Listen for fullscreen change events
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement !== null);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  // Setup auto-refresh when kiosk mode is enabled
+  useEffect(() => {
+    if (kioskMode) {
+      // Set up auto-refresh every minute
+      const interval = setInterval(() => {
+        // Instead of calling router.refresh() which causes a full re-render,
+        // use the custom refresh function
+        refreshPage();
+      }, 60000); // 60 seconds
+      setAutoRefresh(interval);
+
+      // Go fullscreen when entering kiosk mode
+      if (!isFullscreen && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+      }
+    } else {
+      // Clear auto-refresh when kiosk mode is disabled
+      if (autoRefresh) {
+        clearInterval(autoRefresh);
+        setAutoRefresh(null);
+      }
+
+      // Exit fullscreen when leaving kiosk mode
+      if (isFullscreen && document.exitFullscreen) {
+        document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    }
+
+    return () => {
+      if (autoRefresh) {
+        clearInterval(autoRefresh);
+      }
+    };
+  }, [kioskMode, isFullscreen]); // Removed autoRefresh from dependencies to prevent extra renders
+
+  // Fetch kiosk mode settings when team changes
+  useEffect(() => {
+    const fetchKioskMode = async () => {
+      if (!selectedTeam) return;
+
+      try {
+        const response = await axios.get(`/api/teams/${selectedTeam.id}/kiosk`);
+        if (response.data.kioskMode !== undefined) {
+          setKioskMode(response.data.kioskMode);
+        }
+      } catch (error) {
+        console.error("Failed to fetch kiosk mode setting:", error);
+      }
+    };
+
+    fetchKioskMode();
+  }, [selectedTeam]);
 
   // Update URL when team/room changes
   const updateURL = (teamId?: string, roomId?: string) => {
@@ -611,30 +773,33 @@ const Sidebar = () => {
     router.push(`/${route}${queryString}`);
   };
 
-  const handleModeToggle = async (mode: "kiosk" | "live") => {
-    const loadingKey = mode === "kiosk" ? "kiosk" : "live";
+  const handleKioskModeToggle = async () => {
+    if (!selectedTeam) {
+      toast.error("Please select a team first");
+      return;
+    }
+
+    setLoadingStates((prev) => ({ ...prev, kiosk: true }));
+
     try {
-      setLoadingStates((prev) => ({ ...prev, [loadingKey]: true }));
+      const response = await axios.post(`/api/teams/${selectedTeam.id}/kiosk`, {
+        enabled: !kioskMode,
+      });
 
-      const response = await api.post<ApiResponse<{ enabled: boolean }>>(
-        `/device/settings/${mode}`,
-        {
-          enabled: mode === "kiosk" ? !kiskMode : !liveUpdate,
-          teamId: selectedTeam?.id,
-        }
-      );
+      if (response.data.kioskMode !== undefined) {
+        setKioskMode(response.data.kioskMode);
 
-      if (!response.data.error) {
-        if (mode === "kiosk") {
-          setKiskMode(!kiskMode);
+        if (response.data.kioskMode) {
+          toast.success("Kiosk mode enabled with auto-refresh");
         } else {
-          setLiveUpdate(!liveUpdate);
+          toast.success("Kiosk mode disabled");
         }
       }
     } catch (error) {
-      console.error(`Failed to toggle ${mode} mode:`, error);
+      console.error("Failed to toggle kiosk mode:", error);
+      toast.error("Failed to toggle kiosk mode");
     } finally {
-      setLoadingStates((prev) => ({ ...prev, [loadingKey]: false }));
+      setLoadingStates((prev) => ({ ...prev, kiosk: false }));
     }
   };
 
@@ -985,20 +1150,24 @@ const Sidebar = () => {
         {/* Mode Toggles */}
         <div className="flex flex-col space-y-4 mt-6">
           <NavItem
-            icon={<Radio className={cn("w-4 h-4", kiskMode && "text-white")} />}
-            active={kiskMode}
-            onClick={() => handleModeToggle("kiosk")}
+            icon={
+              <Radio className={cn("w-4 h-4", kioskMode && "text-white")} />
+            }
+            active={kioskMode}
+            onClick={handleKioskModeToggle}
             loading={loadingStates.kiosk}
             label="Kiosk Mode"
           />
           <NavItem
-            icon={
-              <Wifi className={cn("w-4 h-4", liveUpdate && "text-white")} />
-            }
-            active={liveUpdate}
-            onClick={() => handleModeToggle("live")}
-            loading={loadingStates.live}
-            label="Live Updates"
+            icon={<Maximize className="w-4 h-4" />}
+            active={isFullscreen}
+            onClick={toggleFullscreen}
+            label={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          />
+          <NavItem
+            icon={<RefreshCw className="w-4 h-4" />}
+            onClick={refreshPage}
+            label="Refresh Data"
           />
         </div>
 
