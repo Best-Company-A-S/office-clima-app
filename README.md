@@ -218,38 +218,6 @@ Common testing utilities are available in `tests/helpers/`:
   - `createTestUser()` - Create a new test user
   - `setupTestUser()` - Ensure test user exists and is logged in
 
-### Test Best Practices
-
-1. **Test Organization**
-
-   - Group related tests using `test.describe()`
-   - Use clear, descriptive test names
-   - Follow the Arrange-Act-Assert pattern
-
-2. **Test Data**
-
-   - Use unique test data for each test
-   - Clean up test data after tests
-   - Use helper functions for common operations
-
-3. **Test Reliability**
-
-   - Add proper waiting mechanisms
-   - Handle loading states
-   - Use test IDs for reliable element selection
-
-4. **Visual Testing**
-
-   - Screenshots are captured on test failures
-   - Videos are retained for failed tests
-   - Visual comparisons across browsers
-
-5. **CI/CD Integration**
-   - Tests run on every pull request
-   - Parallel test execution in CI
-   - Retries enabled for flaky tests
-   - HTML test reports generated
-
 ## Development Workflow
 
 ### Database Changes
@@ -262,7 +230,6 @@ Common testing utilities are available in `tests/helpers/`:
 
 1. Create component files in `components/` directory
 2. Follow existing design patterns and use Shadcn/UI components
-3. Add corresponding test cases in `tests/` directory
 
 ### API Development
 
@@ -270,7 +237,6 @@ Common testing utilities are available in `tests/helpers/`:
 2. Use Prisma client for database operations
 3. Implement proper authentication and validation
 4. Use Sentry for error tracking and monitoring
-5. Add API tests in the test suite
 
 ### Testing New Features
 
