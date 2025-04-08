@@ -23,6 +23,7 @@ model Team {
   members TeamMember[]
   invites TeamInvite[]
   rooms Room[]
+  settings TeamSettings[]
 }
 
 model TeamInvite {
@@ -116,3 +117,22 @@ model SurveyResponse {
 
 
  
+ model TeamSettings {
+  id String @id @default(uuid())
+  teamId String
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  temperatureUnit String @default("C")
+  humidityUnit String @default("%")
+  temperatureThreshold Float @default(25.0)
+  humidityThreshold Float @default(50.0)
+  temperatureAlert Boolean @default(false)
+  temperatureAlertThreshold Float @default(25.0)
+  humidityAlert Boolean @default(false)
+  humidityAlertThreshold Float @default(50.0)
+  temperatureAlertWebhook String?
+  humidityAlertWebhook String?
+  wallpaperUrl String?
+  wallpaperBlur Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+ }

@@ -1,256 +1,208 @@
 "use client";
 
-import { TeamsList } from "@/components/TeamsList";
-import { Separator } from "@/components/ui/separator";
-import { TeamButtonsClient } from "./_components/TeamButtonsClient";
-import axios from "axios";
-import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
-  Loader2,
-  LogOut,
-  PlusCircle,
-  Home,
-  LayoutGrid,
-  Settings,
-  ChevronRight,
-  Sparkles,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { motion } from "framer-motion";
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Thermometer, Droplet, BarChart, Activity, Clock } from "lucide-react";
+import axios from "axios";
+import { useSearchParams } from "next/navigation";
 
-const DashboardPage = () => {
-  const { data: session, status } = useSession();
-  const [teamsData, setTeamsData] = useState([]);
+interface DeviceData {
+  temperature?: number;
+  humidity?: number;
+  lastSeenAt?: string;
+}
+
+const Dashboard = () => {
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
-  const router = useRouter();
+  const [deviceData, setDeviceData] = useState<DeviceData[]>([]);
+  const [settings, setSettings] = useState<{
+    temperatureUnit: string;
+    humidityUnit: string;
+  }>({
+    temperatureUnit: "C",
+    humidityUnit: "%",
+  });
 
   useEffect(() => {
-    // Only redirect if we know the user is not authenticated
-    if (status === "unauthenticated") {
-      router.replace("/");
-    }
+    const fetchData = async () => {
+      const teamId = searchParams.get("teamId");
+      if (!teamId) {
+        setIsLoading(false);
+        return;
+      }
 
-    if (status === "authenticated" && session?.user?.id) {
-      const fetchTeams = async () => {
-        try {
-          setIsLoading(true);
-          const response = await axios.get("/api/teams");
-          setTeamsData(response.data);
-        } catch (error) {
-          console.error("Failed to fetch teams:", error);
-        } finally {
-          setIsLoading(false);
-        }
-      };
+      try {
+        // Fetch settings for temperature and humidity units
+        const settingsResponse = await axios.get(
+          `/api/teams/${teamId}/settings`
+        );
+        setSettings({
+          temperatureUnit: settingsResponse.data.temperatureUnit || "C",
+          humidityUnit: settingsResponse.data.humidityUnit || "%",
+        });
 
-      fetchTeams();
-    }
-  }, [status, session, router]);
+        // Here you would normally fetch device data from an API
+        // For now, we'll use mock data
+        setDeviceData([
+          {
+            temperature: 22.5,
+            humidity: 45,
+            lastSeenAt: new Date().toISOString(),
+          },
+          {
+            temperature: 21.2,
+            humidity: 48,
+            lastSeenAt: new Date().toISOString(),
+          },
+        ]);
+      } catch (error) {
+        console.error("Failed to fetch data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  // Show loading indicator while checking auth
-  if (status === "loading" || isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-background via-background to-primary/5">
-        <div className="flex flex-col items-center gap-6 relative">
-          <div className="absolute inset-0 rounded-full blur-3xl bg-primary/10 -z-10"></div>
-          <svg
-            className="animate-spin h-16 w-16 text-primary"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            ></circle>
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <p className="text-lg font-medium  animate-pulse bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/60">
-            Loading your IoT workspace...
-          </p>
-        </div>
-      </div>
-    );
-  }
+    fetchData();
+  }, [searchParams]);
 
-  // Safety check - shouldn't render this if redirected, but just in case
-  if (status === "unauthenticated") {
-    return null;
-  }
+  // Calculate averages
+  const averageTemperature = deviceData.length
+    ? deviceData.reduce((acc, device) => acc + (device.temperature || 0), 0) /
+      deviceData.length
+    : 0;
 
-  // Augment the data to match the expected format
-  const teams = teamsData.map((team: any) => ({
-    ...team,
-    _count: {
-      members: team.members?.length || 0,
-    },
-  }));
-
-  // Get initials for avatar
-  const getInitials = (name: string) => {
-    if (!name) return "U";
-    return name
-      .split(" ")
-      .map((part) => part[0])
-      .join("")
-      .toUpperCase()
-      .substring(0, 2);
-  };
-
-  const userInitials = getInitials(session?.user?.name || "");
+  const averageHumidity = deviceData.length
+    ? deviceData.reduce((acc, device) => acc + (device.humidity || 0), 0) /
+      deviceData.length
+    : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      <div className="container mx-auto py-8 px-4 sm:px-6 max-w-7xl">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <Card className="mb-10 border-none overflow-hidden shadow-xl bg-gradient-to-br from-primary/20 via-primary/10 to-secondary/5 backdrop-blur-sm">
-            <CardContent className="p-0">
-              <div className="relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
-                <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary/10 rounded-full translate-y-1/2 -translate-x-1/2 blur-3xl"></div>
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold mb-1">Dashboard</h1>
+        <p className="text-muted-foreground">Overview of your climate data</p>
+      </div>
 
-                <div className="relative p-8">
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-14 w-14 border-2 border-primary/20 shadow-lg">
-                          <AvatarImage src={session?.user?.image || ""} />
-                          <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                            {userInitials}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <h1 className="text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/80">
-                            Welcome back
-                            {session?.user?.name
-                              ? `, ${session.user.name.split(" ")[0]}`
-                              : ""}
-                          </h1>
-                          <p className="text-muted-foreground mt-1">
-                            Control your IoT ecosystem from one central
-                            dashboard
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-4 mt-2">
-                        <Button
-                          variant="outline"
-                          className="bg-background/50 backdrop-blur-sm border-primary/20 hover:bg-background/80 hover:border-primary/40 transition-all duration-300"
-                          onClick={() => router.push("/profile")}
-                        >
-                          <Settings className="h-4 w-4 mr-2 text-primary" />
-                          Settings
-                        </Button>
-
-                        <Button
-                          variant="outline"
-                          className="bg-background/50 backdrop-blur-sm border-primary/20 hover:bg-background/80 hover:border-primary/40 transition-all duration-300"
-                          onClick={() => signOut()}
-                        >
-                          <LogOut className="h-4 w-4 mr-2 text-primary" />
-                          Sign Out
-                        </Button>
-                      </div>
-                    </div>
-
-                    <motion.div
-                      className="hidden md:block"
-                      initial={{ scale: 0.9, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      transition={{ delay: 0.3, duration: 0.5 }}
-                    >
-                      <Card className="border-none shadow-md bg-gradient-to-br from-background to-background/80 backdrop-blur-md">
-                        <CardContent className="p-5">
-                          <div className="flex items-center gap-3">
-                            <div className="rounded-full bg-primary/10 p-3">
-                              <Sparkles className="h-5 w-5 text-primary" />
-                            </div>
-                            <div>
-                              <p className="font-medium">Quick Stats</p>
-                              <p className="text-sm text-muted-foreground">
-                                Your IoT ecosystem
-                              </p>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-4 mt-4">
-                            <div className="bg-background/50 rounded-md p-3">
-                              <p className="text-sm text-muted-foreground">
-                                Teams
-                              </p>
-                              <p className="text-2xl font-bold text-foreground">
-                                {teams.length}
-                              </p>
-                            </div>
-                            <div className="bg-background/50 rounded-md p-3">
-                              <p className="text-sm text-muted-foreground">
-                                Devices
-                              </p>
-                              <p className="text-2xl font-bold text-foreground">
-                                {teams.reduce(
-                                  (sum: number, team: any) =>
-                                    sum + (team._count?.devices || 0),
-                                  0
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </motion.div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          className="mb-6"
-        >
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="bg-primary/10 rounded-full p-2">
-                <LayoutGrid className="h-6 w-6 text-primary" />
-              </div>
-              <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
-                Your Teams
-              </h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Temperature Card */}
+        <Card className="bg-card/80 backdrop-blur-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-medium">Temperature</CardTitle>
+              <Thermometer className="h-5 w-5 text-primary" />
             </div>
-            <TeamButtonsClient />
-          </div>
-          <Separator className="my-6 bg-primary/10" />
-        </motion.div>
+            <CardDescription>Average across all devices</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {averageTemperature.toFixed(1)}°{settings.temperatureUnit}
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              {deviceData.length} device{deviceData.length !== 1 ? "s" : ""}{" "}
+              reporting
+            </div>
+          </CardContent>
+        </Card>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4, duration: 0.5 }}
-        >
-          <TeamsList teams={teams} userId={session?.user?.id || ""} />
-        </motion.div>
+        {/* Humidity Card */}
+        <Card className="bg-card/80 backdrop-blur-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-medium">Humidity</CardTitle>
+              <Droplet className="h-5 w-5 text-primary" />
+            </div>
+            <CardDescription>Average across all devices</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {averageHumidity.toFixed(0)}
+              {settings.humidityUnit}
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              {deviceData.length} device{deviceData.length !== 1 ? "s" : ""}{" "}
+              reporting
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Last Updated Card */}
+        <Card className="bg-card/80 backdrop-blur-sm">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-medium">
+                Last Updated
+              </CardTitle>
+              <Clock className="h-5 w-5 text-primary" />
+            </div>
+            <CardDescription>Most recent device readings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {deviceData.length > 0
+                ? new Date(
+                    Math.max(
+                      ...deviceData
+                        .filter((d) => d.lastSeenAt)
+                        .map((d) => new Date(d.lastSeenAt!).getTime())
+                    )
+                  ).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "No data"}
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">
+              {new Date().toLocaleDateString()}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Bottom section - charts or other data */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="bg-card/80 backdrop-blur-sm">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-medium">
+                Daily Trends
+              </CardTitle>
+              <BarChart className="h-5 w-5 text-primary" />
+            </div>
+            <CardDescription>
+              Temperature over the last 24 hours
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="h-[200px] flex items-center justify-center">
+            <div className="text-muted-foreground text-sm">
+              Chart visualization would appear here
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card/80 backdrop-blur-sm">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-medium">Activity</CardTitle>
+              <Activity className="h-5 w-5 text-primary" />
+            </div>
+            <CardDescription>Comfort index and room activity</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[200px] flex items-center justify-center">
+            <div className="text-muted-foreground text-sm">
+              Activity metrics would appear here
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
 };
 
-export default DashboardPage;
+export default Dashboard;
