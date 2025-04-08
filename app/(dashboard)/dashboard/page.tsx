@@ -58,6 +58,14 @@ interface DeviceReading {
   createdAt: string;
 }
 
+interface RoomData {
+  id: string;
+  name: string;
+  type: string | null;
+  size: number | null;
+  capacity: number | null;
+}
+
 interface DailyTrend {
   time: string;
   temperature: number;
@@ -70,7 +78,77 @@ interface ClimateQuality {
   emoji: string;
   message: string;
   color: string;
+  details?: {
+    roomVolume?: number;
+    requiredAirflow?: number;
+    co2Load?: number;
+    idealTempRange?: [number, number];
+    idealHumidityRange?: [number, number];
+  };
 }
+
+// Define the room climate calculation function
+const calculateRoomClimate = (
+  size: number,
+  capacity: number,
+  roomType: string,
+  height: number = 2.5 // Default ceiling height in meters if not provided
+): {
+  roomVolume: number;
+  requiredAirflow: number;
+  co2Load: number;
+  idealTempRange: [number, number];
+  idealHumidityRange: [number, number];
+  recommendedACH: number;
+} => {
+  // Room dimensions estimation (assuming square room if only size is given)
+  const roomLength = Math.sqrt(size);
+  const roomWidth = Math.sqrt(size);
+
+  // Room volume in cubic meters
+  const roomVolume = size * height;
+
+  // Define ACH (Air Changes per Hour) based on room type
+  const roomTypeSettings: {
+    [key: string]: {
+      ach: number;
+      idealTemp: [number, number];
+      idealHumidity: [number, number];
+    };
+  } = {
+    house: { ach: 8, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    office: { ach: 15, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    meeting_room: { ach: 15, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    classroom: { ach: 12, idealTemp: [20, 24], idealHumidity: [40, 60] },
+    conference: { ach: 12, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    hospital: { ach: 15, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    lab: { ach: 20, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    gym: { ach: 20, idealTemp: [18, 22], idealHumidity: [40, 60] },
+    restaurant: { ach: 20, idealTemp: [18, 22], idealHumidity: [40, 60] },
+    library: { ach: 12, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    common_area: { ach: 10, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    other: { ach: 12, idealTemp: [20, 22], idealHumidity: [40, 60] },
+  };
+
+  // Use type mapping or default to office settings
+  const settings = roomTypeSettings[roomType] || roomTypeSettings.office;
+
+  // Required airflow in CFM (Cubic Feet per Minute)
+  const roomVolumeInFt3 = roomVolume * 35.3147; // Convert m³ to ft³
+  const requiredAirflow = (roomVolumeInFt3 * settings.ach) / 60;
+
+  // CO₂ load calculation based on number of people
+  const co2Load = capacity * 0.005; // CO₂ load in m³/min (average person produces 0.005 m³/min)
+
+  return {
+    roomVolume,
+    requiredAirflow,
+    co2Load,
+    idealTempRange: settings.idealTemp,
+    idealHumidityRange: settings.idealHumidity,
+    recommendedACH: settings.ach,
+  };
+};
 
 const Dashboard = () => {
   const searchParams = useSearchParams();
@@ -83,6 +161,7 @@ const Dashboard = () => {
     message: "Moderate Climate",
     color: "text-yellow-500",
   });
+  const [roomData, setRoomData] = useState<RoomData | null>(null);
   const [settings, setSettings] = useState<{
     temperatureUnit: string;
     humidityUnit: string;
@@ -153,38 +232,142 @@ const Dashboard = () => {
     );
   };
 
-  // Define room climate assessment function
+  // Define room climate assessment function using the room data
   const assessRoomClimate = (
     temperature: number,
     humidity: number,
-    roomType: string = "office"
+    room: RoomData | null
   ): ClimateQuality => {
-    // Define ideal ranges based on room type
-    const roomTypeSettings: {
-      [key: string]: {
-        idealTemp: [number, number];
-        idealHumidity: [number, number];
-      };
-    } = {
-      house: { idealTemp: [20, 22], idealHumidity: [40, 60] },
-      office: { idealTemp: [20, 22], idealHumidity: [40, 60] },
-      meeting: { idealTemp: [20, 22], idealHumidity: [40, 60] },
-      classroom: { idealTemp: [20, 24], idealHumidity: [40, 60] },
-      conference: { idealTemp: [20, 22], idealHumidity: [40, 60] },
-      hospital: { idealTemp: [20, 22], idealHumidity: [40, 60] },
-      gym: { idealTemp: [18, 22], idealHumidity: [40, 60] },
-      restaurant: { idealTemp: [18, 22], idealHumidity: [40, 60] },
-      library: { idealTemp: [20, 22], idealHumidity: [40, 60] },
+    // Debug information
+    console.log("Climate assessment inputs:", { temperature, humidity, room });
+
+    // Default values for when room data is missing
+    const defaultClimate: ClimateQuality = {
+      status: "moderate",
+      emoji: "😐",
+      message: "Moderate Climate",
+      color: "text-yellow-500",
     };
 
-    // Use office as default if room type not found
-    const settings = roomTypeSettings[roomType] || roomTypeSettings.office;
+    // If we don't have room data or essential room data is missing, use basic assessment
+    if (!room || room.size === null || room.capacity === null || !room.type) {
+      console.log("Using basic climate assessment due to missing room data");
+      return assessBasicClimate(temperature, humidity);
+    }
 
-    // Calculate how far temperature is from ideal range
-    const tempMin = settings.idealTemp[0];
-    const tempMax = settings.idealTemp[1];
-    const humidMin = settings.idealHumidity[0];
-    const humidMax = settings.idealHumidity[1];
+    try {
+      // Calculate detailed room climate metrics
+      const roomMetrics = calculateRoomClimate(
+        room.size,
+        room.capacity,
+        room.type
+      );
+
+      console.log("Room climate metrics:", roomMetrics);
+
+      // Get ideal ranges
+      const [tempMin, tempMax] = roomMetrics.idealTempRange;
+      const [humidMin, humidMax] = roomMetrics.idealHumidityRange;
+
+      // Calculate deviation from ideal ranges (0 = perfect, higher = worse)
+      let tempDeviation = 0;
+      if (temperature < tempMin) {
+        tempDeviation = tempMin - temperature;
+      } else if (temperature > tempMax) {
+        tempDeviation = temperature - tempMax;
+      }
+
+      let humidDeviation = 0;
+      if (humidity < humidMin) {
+        humidDeviation = (humidMin - humidity) / 5; // Scale humidity deviation
+      } else if (humidity > humidMax) {
+        humidDeviation = (humidity - humidMax) / 5; // Scale humidity deviation
+      }
+
+      // Factor in room size per person for air quality consideration
+      const spacePerPerson = room.size / room.capacity;
+      const spaceDeviation = Math.max(0, 4 - spacePerPerson) / 2; // 4 m² per person is a good baseline
+
+      // Combine deviations to get overall score (lower is better)
+      const combinedDeviation = tempDeviation + humidDeviation + spaceDeviation;
+
+      console.log("Climate deviations:", {
+        tempDeviation,
+        humidDeviation,
+        spaceDeviation,
+        combinedDeviation,
+      });
+
+      // Determine climate quality based on combined deviation
+      let result: ClimateQuality;
+
+      if (combinedDeviation < 1) {
+        result = {
+          status: "excellent",
+          emoji: "😊",
+          message: "Excellent Climate",
+          color: "text-green-500",
+        };
+      } else if (combinedDeviation < 2.5) {
+        result = {
+          status: "good",
+          emoji: "🙂",
+          message: "Good Climate",
+          color: "text-green-400",
+        };
+      } else if (combinedDeviation < 4) {
+        result = {
+          status: "moderate",
+          emoji: "😐",
+          message: "Moderate Climate",
+          color: "text-yellow-500",
+        };
+      } else if (combinedDeviation < 6) {
+        result = {
+          status: "poor",
+          emoji: "🙁",
+          message: "Poor Climate",
+          color: "text-orange-500",
+        };
+      } else {
+        result = {
+          status: "bad",
+          emoji: "😫",
+          message: "Bad Climate",
+          color: "text-red-500",
+        };
+      }
+
+      // Add detailed metrics to the result
+      result.details = {
+        roomVolume: roomMetrics.roomVolume,
+        requiredAirflow: Math.round(roomMetrics.requiredAirflow),
+        co2Load: parseFloat(roomMetrics.co2Load.toFixed(3)),
+        idealTempRange: roomMetrics.idealTempRange,
+        idealHumidityRange: roomMetrics.idealHumidityRange,
+      };
+
+      console.log("Final climate assessment:", result);
+      return result;
+    } catch (error) {
+      console.error("Error in detailed room assessment:", error);
+      // Fallback to basic assessment if something goes wrong
+      return assessBasicClimate(temperature, humidity);
+    }
+  };
+
+  // Function for basic climate assessment when room data is not available
+  const assessBasicClimate = (
+    temperature: number,
+    humidity: number
+  ): ClimateQuality => {
+    console.log("Basic climate assessment with:", { temperature, humidity });
+
+    // Default ideal ranges
+    const tempMin = 20;
+    const tempMax = 24;
+    const humidMin = 40;
+    const humidMax = 60;
 
     // Calculate deviation from ideal ranges (0 = perfect, higher = worse)
     let tempDeviation = 0;
@@ -204,29 +387,35 @@ const Dashboard = () => {
     // Combine deviations to get overall score (lower is better)
     const combinedDeviation = tempDeviation + humidDeviation;
 
-    // Determine climate quality based on combined deviation
-    if (combinedDeviation < 1) {
+    console.log("Basic climate deviations:", {
+      tempDeviation,
+      humidDeviation,
+      combinedDeviation,
+    });
+
+    // Determine climate quality based on combined deviation - more responsive scale
+    if (combinedDeviation < 0.5) {
       return {
         status: "excellent",
         emoji: "😊",
         message: "Excellent Climate",
         color: "text-green-500",
       };
-    } else if (combinedDeviation < 2) {
+    } else if (combinedDeviation < 1.5) {
       return {
         status: "good",
         emoji: "🙂",
         message: "Good Climate",
         color: "text-green-400",
       };
-    } else if (combinedDeviation < 4) {
+    } else if (combinedDeviation < 3) {
       return {
         status: "moderate",
         emoji: "😐",
         message: "Moderate Climate",
         color: "text-yellow-500",
       };
-    } else if (combinedDeviation < 6) {
+    } else if (combinedDeviation < 5) {
       return {
         status: "poor",
         emoji: "🙁",
@@ -255,6 +444,18 @@ const Dashboard = () => {
       }
 
       try {
+        // Fetch room data if roomId is available
+        if (roomId) {
+          try {
+            const roomResponse = await axios.get(`/api/rooms/${roomId}`);
+            console.log("Room data:", roomResponse.data);
+            setRoomData(roomResponse.data);
+          } catch (roomError) {
+            console.error("Failed to fetch room data:", roomError);
+            setRoomData(null);
+          }
+        }
+
         // Fetch settings for temperature and humidity units
         const settingsResponse = await axios.get(
           `/api/teams/${teamId}/settings`
@@ -471,7 +672,7 @@ const Dashboard = () => {
         trendData.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
         setDailyTrendData(trendData);
 
-        // Process data for climate quality (instead of comfort index)
+        // Process data for climate quality using room data
         let climateQuality: ClimateQuality = {
           status: "moderate",
           emoji: "😐",
@@ -487,10 +688,10 @@ const Dashboard = () => {
             climateQuality = assessRoomClimate(
               latestReading.temperature,
               latestReading.humidity,
-              "office" // Default to office, could be made configurable
+              roomData
             );
 
-            console.log("Climate assessment:", climateQuality);
+            console.log("Climate assessment with room data:", climateQuality);
           }
         } catch (error) {
           console.error("Failed to assess climate quality:", error);
@@ -748,12 +949,37 @@ const Dashboard = () => {
             <CardDescription>Current room climate assessment</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col items-center justify-center h-[200px] text-center">
-              <div className="text-8xl mb-4">{comfortData.emoji}</div>
-              <h3 className={`text-2xl font-bold ${comfortData.color} mb-2`}>
+            <div className="flex flex-col items-center justify-center h-[200px] text-center relative">
+              <div className="text-7xl mb-2">{comfortData.emoji}</div>
+              <h3 className={`text-2xl font-bold ${comfortData.color} mb-1`}>
                 {comfortData.message}
               </h3>
-              <p className="text-sm text-muted-foreground max-w-xs">
+
+              {/* Current Temperature and Humidity */}
+              <div className="flex justify-center gap-6 mb-2 text-sm">
+                <div className="flex items-center">
+                  <Thermometer className="h-4 w-4 mr-1 text-rose-400" />
+                  <span>
+                    {dailyTrendData.length > 0
+                      ? `${dailyTrendData[
+                          dailyTrendData.length - 1
+                        ].temperature.toFixed(1)}°${settings.temperatureUnit}`
+                      : `--°${settings.temperatureUnit}`}
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <Droplet className="h-4 w-4 mr-1 text-blue-400" />
+                  <span>
+                    {dailyTrendData.length > 0
+                      ? `${dailyTrendData[
+                          dailyTrendData.length - 1
+                        ].humidity.toFixed(0)}${settings.humidityUnit}`
+                      : `--${settings.humidityUnit}`}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-sm text-muted-foreground max-w-xs mb-2">
                 {comfortData.status === "excellent" &&
                   "Perfect temperature and humidity for this room type!"}
                 {comfortData.status === "good" &&
@@ -765,6 +991,41 @@ const Dashboard = () => {
                 {comfortData.status === "bad" &&
                   "Climate conditions are uncomfortable and need immediate attention."}
               </p>
+
+              {comfortData.details && (
+                <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t border-border pt-2 mt-1 w-full">
+                  <div className="flex justify-between">
+                    <span>Ideal temperature:</span>
+                    <span className="font-medium">
+                      {comfortData.details.idealTempRange?.[0]}-
+                      {comfortData.details.idealTempRange?.[1]}°
+                      {settings.temperatureUnit}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Room type:</span>
+                    <span className="font-medium capitalize">
+                      {roomData?.type?.replace("_", " ") || "Unknown"}
+                    </span>
+                  </div>
+                  {roomData?.size && roomData?.capacity && (
+                    <div className="flex justify-between">
+                      <span>Space per person:</span>
+                      <span className="font-medium">
+                        {(roomData.size / roomData.capacity).toFixed(1)} m²
+                      </span>
+                    </div>
+                  )}
+                  {comfortData.details.requiredAirflow && (
+                    <div className="flex justify-between">
+                      <span>Required airflow:</span>
+                      <span className="font-medium">
+                        {comfortData.details.requiredAirflow} CFM
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
