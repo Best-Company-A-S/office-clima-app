@@ -49,6 +49,9 @@ model Room {
   id String @id @default(uuid())
   name String
   description String?
+  type String? // office, classroom, meeting room, etc.
+  size Int? // size in square meters/feet
+  capacity Int? // max number of people
   teamId String
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())

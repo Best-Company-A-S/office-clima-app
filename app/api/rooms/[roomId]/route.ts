@@ -7,6 +7,9 @@ import { z } from "zod";
 const updateRoomSchema = z.object({
   name: z.string().min(1, "Room name is required").max(100).optional(),
   description: z.string().max(500).optional(),
+  type: z.string().optional(),
+  size: z.coerce.number().int().positive().optional(),
+  capacity: z.coerce.number().int().positive().optional(),
 });
 
 export async function GET(request: Request) {
@@ -71,8 +74,10 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
-  const roomId = request.url.split("/").pop();
+export async function PATCH(
+  request: Request,
+  { params }: { params: { roomId: string } }
+) {
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -82,6 +87,20 @@ export async function PATCH(request: Request) {
   const userId = parseInt(session.user.id);
 
   try {
+    const roomId = params.roomId;
+    const body = await request.json();
+
+    // Validate request body
+    const validation = updateRoomSchema.safeParse(body);
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.error.format() },
+        { status: 400 }
+      );
+    }
+
+    const { name, description, type, size, capacity } = validation.data;
+
     // Get the room with its team to check permissions
     const room = await prisma.room.findUnique({
       where: { id: roomId },
@@ -108,23 +127,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
-    const body = await request.json();
-
-    // Validate request body
-    const validation = updateRoomSchema.safeParse(body);
-    if (!validation.success) {
-      return NextResponse.json(
-        { error: validation.error.format() },
-        { status: 400 }
-      );
-    }
-
     // Update the room
     const updatedRoom = await prisma.room.update({
       where: { id: roomId },
-      data: validation.data,
-      include: {
-        devices: true,
+      data: {
+        name,
+        description,
+        type,
+        size,
+        capacity,
       },
     });
 

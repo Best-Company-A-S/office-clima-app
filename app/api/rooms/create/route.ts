@@ -8,6 +8,9 @@ const createRoomSchema = z.object({
   name: z.string().min(1, "Room name is required").max(100),
   description: z.string().max(500).optional(),
   teamId: z.string().uuid("Invalid team ID"),
+  type: z.string().optional(),
+  size: z.coerce.number().int().positive().optional(),
+  capacity: z.coerce.number().int().positive().optional(),
 });
 
 export async function POST(request: Request) {
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name, description, teamId } = validation.data;
+    const { name, description, teamId, type, size, capacity } = validation.data;
     const userId = parseInt(session.user.id);
 
     // Verify user is authorized to create rooms in this team
@@ -62,6 +65,9 @@ export async function POST(request: Request) {
         name,
         description,
         teamId,
+        type,
+        size,
+        capacity,
       },
     });
 

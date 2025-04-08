@@ -37,6 +37,36 @@ import {
 import { toast } from "sonner";
 import axios from "axios";
 import Image from "next/image";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -89,6 +119,9 @@ interface Room {
   id: string;
   name: string;
   description: string | null;
+  type: string | null;
+  size: number | null;
+  capacity: number | null;
   teamId: string;
   devices: Array<{
     id: string;
@@ -108,6 +141,293 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
 });
+
+// Room form schema
+const roomFormSchema = z.object({
+  name: z.string().min(1, "Room name is required").max(100),
+  description: z.string().max(500).optional(),
+  type: z.string().min(1, "Room type is required").max(100),
+  size: z.coerce
+    .number()
+    .positive("Size must be a positive number")
+    .min(1, "Room size is required"),
+  capacity: z.coerce
+    .number()
+    .positive("Capacity must be a positive number")
+    .min(1, "Room capacity is required"),
+});
+
+type RoomFormValues = z.infer<typeof roomFormSchema>;
+
+// Room Modal Component
+const RoomModal = ({
+  isOpen,
+  onClose,
+  room,
+  teamId,
+  onSave,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  room?: Room;
+  teamId: string;
+  onSave: (room: Room) => void;
+}) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const isEditing = !!room;
+
+  const form = useForm<RoomFormValues>({
+    resolver: zodResolver(roomFormSchema),
+    defaultValues: {
+      name: room?.name || "",
+      description: room?.description || "",
+      type: room?.type || "",
+      size: room?.size || undefined,
+      capacity: room?.capacity || undefined,
+    },
+  });
+
+  useEffect(() => {
+    if (isOpen && room) {
+      form.reset({
+        name: room.name,
+        description: room.description || "",
+        type: room.type || "",
+        size: room.size || undefined,
+        capacity: room.capacity || undefined,
+      });
+    } else if (isOpen && !room) {
+      form.reset({
+        name: "",
+        description: "",
+        type: "",
+        size: undefined,
+        capacity: undefined,
+      });
+    }
+  }, [isOpen, room, form]);
+
+  const onSubmit = async (values: RoomFormValues) => {
+    setIsLoading(true);
+
+    try {
+      const endpoint = isEditing
+        ? `/api/rooms/${room.id}`
+        : "/api/rooms/create";
+
+      const method = isEditing ? "PATCH" : "POST";
+
+      // Ensure numeric values are properly handled
+      const payload = {
+        ...values,
+        teamId: isEditing ? undefined : teamId,
+        size: Number(values.size),
+        capacity: Number(values.capacity),
+      };
+
+      console.log("Sending room data:", payload);
+
+      const response = await axios({
+        method,
+        url: endpoint,
+        data: payload,
+      });
+
+      if (response.status === 200 || response.status === 201) {
+        toast.success(`Room ${isEditing ? "updated" : "created"} successfully`);
+        onSave(response.data);
+        onClose();
+      }
+    } catch (error) {
+      console.error(
+        `Failed to ${isEditing ? "update" : "create"} room:`,
+        error
+      );
+      // Show more detailed error message if available
+      if (axios.isAxiosError(error) && error.response?.data) {
+        const errorData = error.response.data;
+        toast.error(
+          typeof errorData === "string"
+            ? errorData
+            : `Failed to ${
+                isEditing ? "update" : "create"
+              } room: ${JSON.stringify(errorData)}`
+        );
+      } else {
+        toast.error(`Failed to ${isEditing ? "update" : "create"} room`);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const roomTypes = [
+    { value: "office", label: "Office" },
+    { value: "classroom", label: "Classroom" },
+    { value: "meeting_room", label: "Meeting Room" },
+    { value: "lab", label: "Laboratory" },
+    { value: "common_area", label: "Common Area" },
+    { value: "other", label: "Other" },
+  ];
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="bg-card border-border">
+        <DialogHeader>
+          <DialogTitle>
+            {isEditing ? "Edit Room" : "Create New Room"}
+          </DialogTitle>
+          <DialogDescription>
+            {isEditing
+              ? "Update the details of your room."
+              : "Add a new room to your team."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <div className="bg-muted/50 p-3 rounded-md text-sm text-muted-foreground mb-2">
+              <p>
+                Room type, size, and capacity are required fields for accurate
+                climate quality analysis.
+              </p>
+            </div>
+
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Room name" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Description (Optional)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder="Brief description of the room"
+                      {...field}
+                      value={field.value || ""}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <FormField
+                control={form.control}
+                name="type"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Room Type <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value || undefined}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {roomTypes.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Required for climate analysis
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="size"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Size in m² <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="Room size"
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Required for air quality calculations
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="capacity"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Capacity <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="Max. persons"
+                        {...field}
+                        value={field.value || ""}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Required for occupancy analysis
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                disabled={isLoading}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isEditing ? "Update Room" : "Create Room"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 const Sidebar = () => {
   const router = useRouter();
@@ -135,10 +455,8 @@ const Sidebar = () => {
     id: string;
     name: string;
   } | null>(null);
-  const [editingRoom, setEditingRoom] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
+  const [roomModalOpen, setRoomModalOpen] = useState(false);
+  const [roomToEdit, setRoomToEdit] = useState<Room | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
     type: "team" | "room";
     id: string;
@@ -244,19 +562,28 @@ const Sidebar = () => {
 
   const handleCreateRoom = async () => {
     if (!selectedTeam) return;
+    setRoomToEdit(null);
+    setRoomModalOpen(true);
+  };
 
-    try {
-      setLoadingStates((prev) => ({ ...prev, createRoom: true }));
-      const response = await api.post<Room>("/rooms/create", {
-        name: "New Room",
-        teamId: selectedTeam.id,
-      });
-      setRooms((prev) => [...prev, response.data]);
-      handleRoomSelect(response.data);
-    } catch (error) {
-      console.error("Failed to create room:", error);
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, createRoom: false }));
+  const handleEditRoom = (room: Room) => {
+    setRoomToEdit(room);
+    setRoomModalOpen(true);
+  };
+
+  const handleRoomSave = (room: Room) => {
+    if (roomToEdit) {
+      // Update existing room in the list
+      setRooms((prev) => prev.map((r) => (r.id === room.id ? room : r)));
+
+      // If we're editing the selected room, update that too
+      if (selectedRoom?.id === room.id) {
+        setSelectedRoom(room);
+      }
+    } else {
+      // Add new room to the list
+      setRooms((prev) => [...prev, room]);
+      handleRoomSelect(room);
     }
   };
 
@@ -342,25 +669,6 @@ const Sidebar = () => {
     } finally {
       setLoadingStates((prev) => ({ ...prev, teams: false }));
       setDeleteConfirmation(null);
-    }
-  };
-
-  const handleEditRoom = async (roomId: string, newName: string) => {
-    try {
-      setLoadingStates((prev) => ({ ...prev, rooms: true }));
-      await api.patch(`/rooms/${roomId}`, { name: newName });
-      setRooms((prev) =>
-        prev.map((room) =>
-          room.id === roomId ? { ...room, name: newName } : room
-        )
-      );
-      setEditingRoom(null);
-      toast.success("Room updated successfully");
-    } catch (error) {
-      console.error("Failed to update room:", error);
-      toast.error("Failed to update room");
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, rooms: false }));
     }
   };
 
@@ -568,79 +876,60 @@ const Sidebar = () => {
                 <div className="flex flex-col">
                   {rooms.map((room) => (
                     <div key={room.id} className="group flex items-center">
-                      {editingRoom?.id === room.id ? (
-                        <input
-                          autoFocus
-                          className="flex-1 px-2.5 py-1.5 rounded-md bg-white/5 border border-white/10 
-                                     text-white/70 text-sm outline-none"
-                          defaultValue={room.name}
-                          onBlur={(e) =>
-                            handleEditRoom(room.id, e.target.value)
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter")
-                              handleEditRoom(room.id, e.currentTarget.value);
-                            if (e.key === "Escape") setEditingRoom(null);
-                          }}
-                        />
-                      ) : (
-                        <>
-                          <motion.button
-                            whileHover={{
-                              backgroundColor: "rgba(255,255,255,0.03)",
-                            }}
-                            onClick={() => handleRoomSelect(room)}
-                            className={cn(
-                              "flex-1 px-2.5 py-1.5 rounded-md text-white/70 text-sm text-left",
-                              selectedRoom?.id === room.id &&
-                                "bg-white/5 text-white"
-                            )}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span>{room.name}</span>
-                              <span className="text-xs text-white/40">
-                                {room.devices?.length || 0}
-                              </span>
-                            </div>
-                          </motion.button>
-                          <DropdownMenu.Root>
-                            <DropdownMenu.Trigger asChild>
-                              <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/5 rounded-md">
-                                <MoreVertical className="h-4 w-4 text-white/40" />
-                              </button>
-                            </DropdownMenu.Trigger>
-                            <DropdownMenu.Portal>
-                              <DropdownMenu.Content
-                                className="z-[100] min-w-[180px] rounded-md bg-neutral-950/95 backdrop-blur-xl 
+                      <motion.button
+                        whileHover={{
+                          backgroundColor: "rgba(255,255,255,0.03)",
+                        }}
+                        onClick={() => handleRoomSelect(room)}
+                        className={cn(
+                          "flex-1 px-2.5 py-1.5 rounded-md text-white/70 text-sm text-left",
+                          selectedRoom?.id === room.id &&
+                            "bg-white/5 text-white"
+                        )}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span>{room.name}</span>
+                          <span className="text-xs text-white/40">
+                            {room.devices?.length || 0}
+                          </span>
+                        </div>
+                      </motion.button>
+                      <DropdownMenu.Root>
+                        <DropdownMenu.Trigger asChild>
+                          <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/5 rounded-md">
+                            <MoreVertical className="h-4 w-4 text-white/40" />
+                          </button>
+                        </DropdownMenu.Trigger>
+                        <DropdownMenu.Portal>
+                          <DropdownMenu.Content
+                            className="z-[100] min-w-[180px] rounded-md bg-neutral-950/95 backdrop-blur-xl 
                                           border border-white/5 p-1 shadow-xl"
-                              >
-                                <DropdownMenu.Item
-                                  onClick={() => setEditingRoom(room)}
-                                  className="flex items-center gap-2 px-2 py-1.5 text-sm text-white/70 
-                                           hover:bg-white/5 rounded-sm cursor-pointer"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                  Edit Room
-                                </DropdownMenu.Item>
-                                <DropdownMenu.Item
-                                  onClick={() =>
-                                    setDeleteConfirmation({
-                                      type: "room",
-                                      id: room.id,
-                                      name: room.name,
-                                    })
-                                  }
-                                  className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-400/80 
-                                           hover:bg-white/5 rounded-sm cursor-pointer"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                  Delete Room
-                                </DropdownMenu.Item>
-                              </DropdownMenu.Content>
-                            </DropdownMenu.Portal>
-                          </DropdownMenu.Root>
-                        </>
-                      )}
+                          >
+                            <DropdownMenu.Item
+                              onClick={() => handleEditRoom(room)}
+                              className="flex items-center gap-2 px-2 py-1.5 text-sm text-white/70 
+                                         hover:bg-white/5 rounded-sm cursor-pointer"
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit Room
+                            </DropdownMenu.Item>
+                            <DropdownMenu.Item
+                              onClick={() =>
+                                setDeleteConfirmation({
+                                  type: "room",
+                                  id: room.id,
+                                  name: room.name,
+                                })
+                              }
+                              className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-400/80 
+                                         hover:bg-white/5 rounded-sm cursor-pointer"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Delete Room
+                            </DropdownMenu.Item>
+                          </DropdownMenu.Content>
+                        </DropdownMenu.Portal>
+                      </DropdownMenu.Root>
                     </div>
                   ))}
                   <motion.button
@@ -750,6 +1039,20 @@ const Sidebar = () => {
         </div>
       </motion.div>
       <DevicePairingModal />
+
+      {/* Room Modal */}
+      {selectedTeam && (
+        <RoomModal
+          isOpen={roomModalOpen}
+          onClose={() => {
+            setRoomModalOpen(false);
+            setRoomToEdit(null);
+          }}
+          room={roomToEdit || undefined}
+          teamId={selectedTeam.id}
+          onSave={handleRoomSave}
+        />
+      )}
 
       <AlertDialog
         open={deleteConfirmation !== null}

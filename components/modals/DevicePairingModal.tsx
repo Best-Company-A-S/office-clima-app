@@ -72,6 +72,9 @@ export const DevicePairingModal = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
+  const [teamId, setTeamId] = useState<string | undefined>(
+    preselectedRoom?.teamId
+  );
   const router = useRouter();
 
   // Form for device configuration
@@ -95,13 +98,17 @@ export const DevicePairingModal = () => {
   // Load available rooms for the dropdown
   useEffect(() => {
     const fetchRooms = async () => {
-      if (currentStep === "configure" && isOpen) {
+      if ((currentStep === "configure" || currentStep === "scan") && isOpen) {
         try {
-          // Get the team ID from the preselected room
-          const teamId = preselectedRoom?.teamId;
+          // Get the team ID from URL or use the one from preselected room
+          const searchParams = new URLSearchParams(window.location.search);
+          const urlTeamId =
+            searchParams.get("teamId") || preselectedRoom?.teamId;
 
-          if (teamId) {
-            const response = await axios.get(`/api/rooms?teamId=${teamId}`);
+          if (urlTeamId) {
+            setTeamId(urlTeamId);
+            const response = await axios.get(`/api/rooms?teamId=${urlTeamId}`);
+            console.log("Fetched rooms:", response.data);
             setAvailableRooms(response.data);
           }
         } catch (error) {
@@ -114,14 +121,36 @@ export const DevicePairingModal = () => {
     fetchRooms();
   }, [currentStep, isOpen, preselectedRoom]);
 
+  // Refresh rooms when modal is opened (to get newly created rooms)
+  useEffect(() => {
+    if (isOpen && teamId) {
+      const fetchLatestRooms = async () => {
+        try {
+          const response = await axios.get(`/api/rooms?teamId=${teamId}`);
+          console.log("Refreshed rooms on modal open:", response.data);
+          setAvailableRooms(response.data);
+        } catch (error) {
+          console.error("Error refreshing rooms:", error);
+        }
+      };
+
+      fetchLatestRooms();
+    }
+  }, [isOpen, teamId]);
+
   // Update the config form when device details or preselected room changes
   useEffect(() => {
     if (currentStep === "configure") {
+      // Get room from URL if available
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlRoomId = searchParams.get("roomId");
+
       configForm.reset({
         name: deviceDetails?.name || "",
         description: deviceDetails?.description || "",
-        // If there's a preselectedRoom, use its ID, otherwise use the device's roomId or "none"
-        roomId: preselectedRoom?.id || deviceDetails?.roomId || "none",
+        // Priority: 1. URL roomId, 2. preselectedRoom, 3. device's roomId, 4. "none"
+        roomId:
+          urlRoomId || preselectedRoom?.id || deviceDetails?.roomId || "none",
       });
     }
   }, [deviceDetails, preselectedRoom, currentStep, configForm]);
@@ -378,7 +407,33 @@ export const DevicePairingModal = () => {
                 name="roomId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Assign to Room (Optional)</FormLabel>
+                    <FormLabel className="flex justify-between items-center">
+                      <span>Assign to Room (Optional)</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (teamId) {
+                            toast.info("Refreshing room list...");
+                            axios
+                              .get(`/api/rooms?teamId=${teamId}`)
+                              .then((response) => {
+                                setAvailableRooms(response.data);
+                                toast.success("Room list updated");
+                              })
+                              .catch((error) => {
+                                console.error("Error refreshing rooms:", error);
+                                toast.error("Failed to refresh rooms");
+                              });
+                          }
+                        }}
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </Button>
+                    </FormLabel>
                     <Select
                       disabled={isLoading}
                       onValueChange={field.onChange}
@@ -399,6 +454,11 @@ export const DevicePairingModal = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormDescription>
+                      {availableRooms.length === 0
+                        ? "No rooms available. Create a room first."
+                        : "Select a room to assign this device to"}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -436,7 +496,25 @@ export const DevicePairingModal = () => {
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        } else if (teamId) {
+          // Refresh rooms when dialog is opened
+          axios
+            .get(`/api/rooms?teamId=${teamId}`)
+            .then((response) => {
+              console.log("Rooms refreshed on dialog open:", response.data);
+              setAvailableRooms(response.data);
+            })
+            .catch((error) => {
+              console.error("Error refreshing rooms on dialog open:", error);
+            });
+        }
+      }}
+    >
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>{getTitle()}</DialogTitle>

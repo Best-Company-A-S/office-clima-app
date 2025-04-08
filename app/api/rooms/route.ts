@@ -1,6 +1,16 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const roomSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  type: z.string().optional(),
+  size: z.number().int().positive().optional(),
+  capacity: z.number().int().positive().optional(),
+  teamId: z.string(),
+});
 
 export async function GET(request: Request) {
   const session = await auth();
@@ -74,6 +84,43 @@ export async function GET(request: Request) {
     console.error("Error fetching rooms:", error);
     return NextResponse.json(
       { error: "Failed to fetch rooms" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const session = await auth();
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    const body = await req.json();
+    const { name, description, teamId, type, size, capacity } =
+      roomSchema.parse(body);
+
+    // ... existing code ...
+
+    // Create the room
+    const room = await prisma.room.create({
+      data: {
+        name,
+        description,
+        type,
+        size,
+        capacity,
+        teamId,
+      },
+    });
+
+    // ... existing code ...
+  } catch (error) {
+    console.error("Error creating room:", error);
+    return NextResponse.json(
+      { error: "Failed to create room" },
       { status: 500 }
     );
   }
