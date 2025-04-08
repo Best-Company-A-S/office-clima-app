@@ -15,6 +15,7 @@ import {
   MoreVertical,
   Pencil,
   Trash2,
+  Thermometer,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -434,7 +435,12 @@ const Sidebar = () => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
-  const [activeItem, setActiveItem] = useState("dashboard");
+  const [activeItem, setActiveItem] = useState(() => {
+    if (pathname.includes("/dashboard")) return "dashboard";
+    if (pathname.includes("/devices")) return "devices";
+    if (pathname.includes("/settings")) return "settings";
+    return "dashboard"; // Default
+  });
   const [kiskMode, setKiskMode] = useState(false);
   const [liveUpdate, setLiveUpdate] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -470,6 +476,13 @@ const Sidebar = () => {
     if (roomId) params.set("roomId", roomId);
     router.push(`${pathname}?${params.toString()}`);
   };
+
+  // Effect to update activeItem when pathname changes
+  useEffect(() => {
+    if (pathname.includes("/dashboard")) setActiveItem("dashboard");
+    else if (pathname.includes("/devices")) setActiveItem("devices");
+    else if (pathname.includes("/settings")) setActiveItem("settings");
+  }, [pathname]);
 
   // Fetch teams on mount
   useEffect(() => {
@@ -589,7 +602,13 @@ const Sidebar = () => {
 
   const handleNavigation = (route: string) => {
     setActiveItem(route);
-    router.push(`/${route}`);
+    // Preserve team and room IDs when navigating
+    const params = new URLSearchParams();
+    if (selectedTeam?.id) params.set("teamId", selectedTeam.id);
+    if (selectedRoom?.id) params.set("roomId", selectedRoom.id);
+
+    const queryString = params.toString() ? `?${params.toString()}` : "";
+    router.push(`/${route}${queryString}`);
   };
 
   const handleModeToggle = async (mode: "kiosk" | "live") => {
@@ -730,6 +749,12 @@ const Sidebar = () => {
             active={activeItem === "dashboard"}
             onClick={() => handleNavigation("dashboard")}
             label="Dashboard"
+          />
+          <NavItem
+            icon={<Thermometer className="w-4 h-4" />}
+            active={activeItem === "devices"}
+            onClick={() => handleNavigation("devices")}
+            label="Devices"
           />
           <NavItem
             icon={<Settings className="w-4 h-4" />}
