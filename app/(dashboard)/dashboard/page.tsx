@@ -65,11 +65,11 @@ interface DailyTrend {
   timestamp: Date;
 }
 
-interface ComfortData {
-  day: string;
-  comfort: number;
-  activity: number;
-  timestamp: Date;
+interface ClimateQuality {
+  status: "excellent" | "good" | "moderate" | "poor" | "bad";
+  emoji: string;
+  message: string;
+  color: string;
 }
 
 const Dashboard = () => {
@@ -77,7 +77,12 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [deviceData, setDeviceData] = useState<DeviceData[]>([]);
   const [dailyTrendData, setDailyTrendData] = useState<DailyTrend[]>([]);
-  const [comfortData, setComfortData] = useState<ComfortData[]>([]);
+  const [comfortData, setComfortData] = useState<ClimateQuality>({
+    status: "moderate",
+    emoji: "😐",
+    message: "Moderate Climate",
+    color: "text-yellow-500",
+  });
   const [settings, setSettings] = useState<{
     temperatureUnit: string;
     humidityUnit: string;
@@ -102,24 +107,6 @@ const Dashboard = () => {
       theme: {
         light: "hsl(220, 70%, 50%)",
         dark: "hsl(220, 70%, 60%)",
-      },
-    },
-  };
-
-  // Chart configuration for comfort index
-  const comfortConfig: ChartConfig = {
-    comfort: {
-      label: "Comfort Index",
-      theme: {
-        light: "hsl(150, 70%, 50%)",
-        dark: "hsl(150, 70%, 60%)",
-      },
-    },
-    activity: {
-      label: "Room Activity",
-      theme: {
-        light: "hsl(280, 70%, 50%)",
-        dark: "hsl(280, 70%, 60%)",
       },
     },
   };
@@ -164,6 +151,96 @@ const Dashboard = () => {
     return Math.sqrt(
       squareDiffs.reduce((sum, val) => sum + val, 0) / values.length
     );
+  };
+
+  // Define room climate assessment function
+  const assessRoomClimate = (
+    temperature: number,
+    humidity: number,
+    roomType: string = "office"
+  ): ClimateQuality => {
+    // Define ideal ranges based on room type
+    const roomTypeSettings: {
+      [key: string]: {
+        idealTemp: [number, number];
+        idealHumidity: [number, number];
+      };
+    } = {
+      house: { idealTemp: [20, 22], idealHumidity: [40, 60] },
+      office: { idealTemp: [20, 22], idealHumidity: [40, 60] },
+      meeting: { idealTemp: [20, 22], idealHumidity: [40, 60] },
+      classroom: { idealTemp: [20, 24], idealHumidity: [40, 60] },
+      conference: { idealTemp: [20, 22], idealHumidity: [40, 60] },
+      hospital: { idealTemp: [20, 22], idealHumidity: [40, 60] },
+      gym: { idealTemp: [18, 22], idealHumidity: [40, 60] },
+      restaurant: { idealTemp: [18, 22], idealHumidity: [40, 60] },
+      library: { idealTemp: [20, 22], idealHumidity: [40, 60] },
+    };
+
+    // Use office as default if room type not found
+    const settings = roomTypeSettings[roomType] || roomTypeSettings.office;
+
+    // Calculate how far temperature is from ideal range
+    const tempMin = settings.idealTemp[0];
+    const tempMax = settings.idealTemp[1];
+    const humidMin = settings.idealHumidity[0];
+    const humidMax = settings.idealHumidity[1];
+
+    // Calculate deviation from ideal ranges (0 = perfect, higher = worse)
+    let tempDeviation = 0;
+    if (temperature < tempMin) {
+      tempDeviation = tempMin - temperature;
+    } else if (temperature > tempMax) {
+      tempDeviation = temperature - tempMax;
+    }
+
+    let humidDeviation = 0;
+    if (humidity < humidMin) {
+      humidDeviation = (humidMin - humidity) / 5; // Scale humidity deviation
+    } else if (humidity > humidMax) {
+      humidDeviation = (humidity - humidMax) / 5; // Scale humidity deviation
+    }
+
+    // Combine deviations to get overall score (lower is better)
+    const combinedDeviation = tempDeviation + humidDeviation;
+
+    // Determine climate quality based on combined deviation
+    if (combinedDeviation < 1) {
+      return {
+        status: "excellent",
+        emoji: "😊",
+        message: "Excellent Climate",
+        color: "text-green-500",
+      };
+    } else if (combinedDeviation < 2) {
+      return {
+        status: "good",
+        emoji: "🙂",
+        message: "Good Climate",
+        color: "text-green-400",
+      };
+    } else if (combinedDeviation < 4) {
+      return {
+        status: "moderate",
+        emoji: "😐",
+        message: "Moderate Climate",
+        color: "text-yellow-500",
+      };
+    } else if (combinedDeviation < 6) {
+      return {
+        status: "poor",
+        emoji: "🙁",
+        message: "Poor Climate",
+        color: "text-orange-500",
+      };
+    } else {
+      return {
+        status: "bad",
+        emoji: "😫",
+        message: "Bad Climate",
+        color: "text-red-500",
+      };
+    }
   };
 
   useEffect(() => {
@@ -394,99 +471,33 @@ const Dashboard = () => {
         trendData.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
         setDailyTrendData(trendData);
 
-        // Process data for comfort index (last 7 days)
-        let weeklyData: ComfortData[] = [];
+        // Process data for climate quality (instead of comfort index)
+        let climateQuality: ClimateQuality = {
+          status: "moderate",
+          emoji: "😐",
+          message: "Moderate Climate",
+          color: "text-yellow-500",
+        };
 
         try {
-          // Try to get daily data from the stats endpoint
-          const dailyResponse = await axios.get(
-            `/api/devices/readings/stats?${
-              roomId ? "roomId=" + roomId : "teamId=" + teamId
-            }&period=week`
-          );
+          // If we have temperature and humidity data, assess the climate
+          if (dailyTrendData.length > 0) {
+            // Get the most recent reading
+            const latestReading = dailyTrendData[dailyTrendData.length - 1];
+            climateQuality = assessRoomClimate(
+              latestReading.temperature,
+              latestReading.humidity,
+              "office" // Default to office, could be made configurable
+            );
 
-          if (dailyResponse.data?.timeSeriesData?.length > 0) {
-            // Generate comfort and activity metrics from the time series data
-            weeklyData = dailyResponse.data.timeSeriesData.map((item: any) => {
-              const timestamp = item.hour ? parseISO(item.hour) : new Date();
-              const dayTemp = parseFloat(item.avg_temperature || 0);
-              const dayHumid = parseFloat(item.avg_humidity || 0);
-              const readingCount = item.reading_count || 0;
-
-              return {
-                day: format(timestamp, "EEE"),
-                comfort: parseFloat(
-                  calculateComfortIndex(dayTemp, dayHumid).toFixed(1)
-                ),
-                activity: parseFloat(
-                  Math.min(readingCount * 2, 100).toFixed(1)
-                ), // Scale reading count as activity
-                timestamp,
-              };
-            });
+            console.log("Climate assessment:", climateQuality);
           }
         } catch (error) {
-          console.error("Failed to fetch weekly data:", error);
+          console.error("Failed to assess climate quality:", error);
         }
 
-        // If no data from API, create comfort data from available readings
-        if (weeklyData.length === 0 && deviceData.length > 0) {
-          // Group readings by day
-          const dailyGroups: { [key: string]: DeviceReading[] } = {};
-
-          // Sort readings by time
-          const sortedReadings = [...deviceData].sort(
-            (a, b) =>
-              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-          );
-
-          // Generate daily data points for the last 7 days
-          for (let i = 6; i >= 0; i--) {
-            const dayDate = subDays(new Date(), i);
-            const dayKey = format(dayDate, "yyyy-MM-dd");
-
-            // Find readings from this day
-            const dayReadings = sortedReadings.filter((r) => {
-              const readingDate = new Date(r.createdAt);
-              return format(readingDate, "yyyy-MM-dd") === dayKey;
-            });
-
-            if (dayReadings.length > 0) {
-              // Calculate average for this day
-              const avgTemp =
-                dayReadings.reduce((sum, r) => sum + r.temperature, 0) /
-                dayReadings.length;
-              const avgHumid =
-                dayReadings.reduce((sum, r) => sum + r.humidity, 0) /
-                dayReadings.length;
-
-              weeklyData.push({
-                day: format(dayDate, "EEE"),
-                comfort: parseFloat(
-                  calculateComfortIndex(avgTemp, avgHumid).toFixed(1)
-                ),
-                activity: parseFloat(
-                  calculateActivityLevel(dayReadings).toFixed(1)
-                ),
-                timestamp: dayDate,
-              });
-            } else {
-              // No readings for this day, use estimated values
-              weeklyData.push({
-                day: format(dayDate, "EEE"),
-                comfort: 75 + (Math.random() * 15 - 7.5), // Random comfort between 67.5-82.5
-                activity: 20 + Math.random() * 40, // Random activity between 20-60
-                timestamp: dayDate,
-              });
-            }
-          }
-        }
-
-        // Set comfort data, sorted by date
-        weeklyData.sort(
-          (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
-        );
-        setComfortData(weeklyData);
+        // Store the result
+        setComfortData(climateQuality);
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -725,78 +736,36 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Comfort Index Chart */}
+        {/* Climate Quality Card */}
         <Card className="bg-card/80 backdrop-blur-sm">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg font-medium">
-                Comfort Index
+                Climate Quality
               </CardTitle>
               <Activity className="h-5 w-5 text-primary" />
             </div>
-            <CardDescription>
-              Comfort level and room activity over the past week
-            </CardDescription>
+            <CardDescription>Current room climate assessment</CardDescription>
           </CardHeader>
           <CardContent>
-            {comfortData.length > 0 ? (
-              <ChartContainer
-                config={comfortConfig}
-                className="h-[200px] w-full"
-              >
-                <LineChart data={comfortData} accessibilityLayer>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="var(--border)"
-                    opacity={0.3}
-                  />
-                  <XAxis
-                    dataKey="day"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <Line
-                    type="monotone"
-                    dataKey="comfort"
-                    stroke="var(--color-comfort)"
-                    strokeWidth={2}
-                    dot={{
-                      stroke: "var(--color-comfort)",
-                      strokeWidth: 2,
-                      r: 4,
-                    }}
-                    activeDot={{ r: 6 }}
-                    isAnimationActive={true}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="activity"
-                    stroke="var(--color-activity)"
-                    strokeWidth={2}
-                    dot={{
-                      stroke: "var(--color-activity)",
-                      strokeWidth: 2,
-                      r: 4,
-                    }}
-                    activeDot={{ r: 6 }}
-                    isAnimationActive={true}
-                  />
-                </LineChart>
-              </ChartContainer>
-            ) : (
-              <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-                <p>No comfort data available for the past week</p>
-              </div>
-            )}
+            <div className="flex flex-col items-center justify-center h-[200px] text-center">
+              <div className="text-8xl mb-4">{comfortData.emoji}</div>
+              <h3 className={`text-2xl font-bold ${comfortData.color} mb-2`}>
+                {comfortData.message}
+              </h3>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                {comfortData.status === "excellent" &&
+                  "Perfect temperature and humidity for this room type!"}
+                {comfortData.status === "good" &&
+                  "Very comfortable climate conditions for this room."}
+                {comfortData.status === "moderate" &&
+                  "Climate is acceptable but could be improved."}
+                {comfortData.status === "poor" &&
+                  "Climate conditions need adjustment for comfort."}
+                {comfortData.status === "bad" &&
+                  "Climate conditions are uncomfortable and need immediate attention."}
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
