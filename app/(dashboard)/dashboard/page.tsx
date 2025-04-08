@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Settings,
   BarChart3,
+  Info,
 } from "lucide-react";
 import axios from "axios";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -548,6 +549,15 @@ const Dashboard = () => {
   const isLoadingRef = useRef(false);
   const lastFetchTimeRef = useRef(0);
 
+  // Add these new refs at the top of the Dashboard component
+  const comparisonRequestsInProgressRef = useRef<{ [key: string]: boolean }>(
+    {}
+  );
+  const comparisonDataCacheRef = useRef<{
+    [key: string]: { timestamp: number; data: any };
+  }>({});
+  const lastComparisonFetchTimeRef = useRef<number>(0);
+
   // Wrap the fetchData function in useCallback to prevent it from triggering renders
   const fetchData = useCallback(async () => {
     // Debounce fetches - don't allow more than one fetch every 10 seconds
@@ -944,12 +954,22 @@ const Dashboard = () => {
   // Use roomId from URL or fallback
   const roomId = searchParams.get("roomId") || "";
 
-  // Add the fetchComparisonData function below the fetchData function
+  // Replace the fetchComparisonData function with this optimized version
   const fetchComparisonData = useCallback(async () => {
     if (!selectedItems.length || !isComparing) return;
 
     // Don't fetch if already loading comparison data
     if (isLoadingComparison) return;
+
+    // Throttle API requests - only allow one fetch every 5 seconds
+    const now = Date.now();
+    if (now - lastComparisonFetchTimeRef.current < 5000) {
+      console.log("Throttling comparison data fetch");
+      return;
+    }
+
+    // Set the last fetch time
+    lastComparisonFetchTimeRef.current = now;
 
     setIsLoadingComparison(true);
     const teamId = searchParams.get("teamId");
@@ -958,57 +978,107 @@ const Dashboard = () => {
       return;
     }
 
-    const newComparisonData: any = {};
+    const newComparisonData: any = { ...comparisonData };
+    let dataChanged = false;
 
     try {
-      for (const itemId of selectedItems) {
+      const fetchPromises = selectedItems.map(async (itemId) => {
+        // Skip if request already in progress for this item
+        if (comparisonRequestsInProgressRef.current[itemId]) {
+          return null;
+        }
+
+        // Check cache first (valid for 2 minutes)
+        const cachedData = comparisonDataCacheRef.current[itemId];
+        if (cachedData && now - cachedData.timestamp < 120000) {
+          console.log(`Using cached data for ${itemId}`);
+          if (
+            !newComparisonData[itemId] ||
+            !isEqual(newComparisonData[itemId], cachedData.data)
+          ) {
+            newComparisonData[itemId] = cachedData.data;
+            dataChanged = true;
+          }
+          return null;
+        }
+
+        comparisonRequestsInProgressRef.current[itemId] = true;
+
         let endpoint = "";
         let itemName = "";
         const color = getRandomColor();
 
         // Only fetch room data since we're only comparing rooms
         const room = allRooms.find((r) => r.id === itemId);
-        if (!room) continue;
+        if (!room) {
+          comparisonRequestsInProgressRef.current[itemId] = false;
+          return null;
+        }
 
         itemName = room.name;
         endpoint = `/api/devices/readings/stats?roomId=${itemId}&period=day`;
 
-        const response = await axios.get(endpoint);
+        try {
+          const response = await axios.get(endpoint);
 
-        let trendData: DailyTrend[] = [];
+          let trendData: DailyTrend[] = [];
 
-        if (response.data?.timeSeriesData?.length > 0) {
-          // Process room statistics data
-          trendData = response.data.timeSeriesData.map((item: any) => {
-            const timestamp = item.hour ? parseISO(item.hour) : new Date();
-            return {
-              time: format(timestamp, "HH:mm"),
-              // Round values to 1 decimal place for cleaner display
-              temperature: parseFloat(
-                parseFloat(item.avg_temperature || 0).toFixed(1)
-              ),
-              humidity: parseFloat(
-                parseFloat(item.avg_humidity || 0).toFixed(0)
-              ),
-              timestamp,
+          if (response.data?.timeSeriesData?.length > 0) {
+            // Process room statistics data
+            trendData = response.data.timeSeriesData.map((item: any) => {
+              const timestamp = item.hour ? parseISO(item.hour) : new Date();
+              return {
+                time: format(timestamp, "HH:mm"),
+                // Round values to 1 decimal place for cleaner display
+                temperature: parseFloat(
+                  parseFloat(item.avg_temperature || 0).toFixed(1)
+                ),
+                humidity: parseFloat(
+                  parseFloat(item.avg_humidity || 0).toFixed(0)
+                ),
+                timestamp,
+              };
+            });
+          }
+
+          if (trendData.length > 0) {
+            const roomData = {
+              name: itemName,
+              color,
+              data: trendData,
             };
-          });
-        }
 
-        if (trendData.length > 0) {
-          newComparisonData[itemId] = {
-            name: itemName,
-            color,
-            data: trendData,
-          };
+            // Cache the data
+            comparisonDataCacheRef.current[itemId] = {
+              timestamp: now,
+              data: roomData,
+            };
+
+            // Only update if data has changed
+            if (
+              !newComparisonData[itemId] ||
+              !isEqual(newComparisonData[itemId], roomData)
+            ) {
+              newComparisonData[itemId] = roomData;
+              dataChanged = true;
+            }
+          }
+        } catch (error) {
+          console.error(
+            `Failed to fetch comparison data for room ${itemId}:`,
+            error
+          );
+        } finally {
+          comparisonRequestsInProgressRef.current[itemId] = false;
         }
-      }
+      });
+
+      // Wait for all fetch operations to complete
+      await Promise.all(fetchPromises);
 
       // Only update state if data has actually changed to prevent render loops
-      if (
-        !isEqual(newComparisonData, comparisonData) &&
-        Object.keys(newComparisonData).length > 0
-      ) {
+      if (dataChanged && Object.keys(newComparisonData).length > 0) {
+        console.log("Updating comparison data with:", newComparisonData);
         setComparisonData(newComparisonData);
       }
     } catch (error) {
@@ -1022,15 +1092,60 @@ const Dashboard = () => {
     allRooms,
     comparisonData,
     isLoadingComparison,
+    searchParams,
   ]);
 
-  // Add an effect to trigger comparison data fetching
+  // Modify the useEffect for comparison data to use a clean-up function and add a debounce
   useEffect(() => {
-    // Only run this effect if relevant dependencies have changed
+    let isMounted = true;
+    let debounceTimer: NodeJS.Timeout | null = null;
+
     if (selectedItems.length > 0 && isComparing) {
-      fetchComparisonData();
+      // Debounce the fetch to avoid rapid multiple calls
+      debounceTimer = setTimeout(() => {
+        if (isMounted) {
+          fetchComparisonData();
+        }
+      }, 300);
     }
+
+    return () => {
+      isMounted = false;
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+    };
   }, [fetchComparisonData, selectedItems.length, isComparing]);
+
+  // Add this function near the fetchComparisonData function
+  const getComparisonDebugInfo = () => {
+    const now = Date.now();
+    const cacheInfo = Object.entries(comparisonDataCacheRef.current).map(
+      ([roomId, cacheItem]) => {
+        const room = allRooms.find((r) => r.id === roomId);
+        const age = Math.round((now - cacheItem.timestamp) / 1000);
+        return {
+          roomName: room?.name || roomId,
+          age: `${age} sec ago`,
+          isValid: age < 120,
+          dataPoints: cacheItem.data.data?.length || 0,
+        };
+      }
+    );
+
+    return {
+      cacheEntries: cacheInfo.length,
+      roomsRequested: selectedItems.length,
+      throttleStatus: `${Math.max(
+        0,
+        5 - Math.round((now - lastComparisonFetchTimeRef.current) / 1000)
+      )} sec until next fetch`,
+      requestsInProgress: Object.entries(
+        comparisonRequestsInProgressRef.current
+      ).filter(([_, inProgress]) => inProgress).length,
+      cacheInfo,
+    };
+  };
 
   if (isLoading) {
     return (
@@ -1354,7 +1469,7 @@ const Dashboard = () => {
       </div>
 
       {isComparing && (
-        <div className="bg-muted/40 border rounded-lg p-3 flex items-center justify-between">
+        <div className="bg-muted/40 border rounded-lg p-3 flex items-center justify-between mb-4">
           <div className="flex items-center">
             <span className="text-sm font-medium mr-3">Comparing Rooms:</span>
             <div className="flex flex-wrap gap-1 max-w-[500px]">
@@ -1401,148 +1516,442 @@ const Dashboard = () => {
               })}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8">
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  <span className="text-xs">Add more</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent className="w-[90vw] sm:w-[440px] p-0">
-                {/* Same content as the initial selection sheet, but without device selection tab */}
-                <SheetHeader className="p-6 pb-2">
-                  <SheetTitle>Add More Rooms</SheetTitle>
-                  <SheetDescription>
-                    Select additional rooms to compare
-                  </SheetDescription>
-                </SheetHeader>
-
-                <div className="px-6 py-4 border-t">
-                  <h3 className="text-sm font-medium mb-3">
-                    Select Rooms
-                    {allRooms.length === 0 && (
-                      <span className="text-xs font-normal text-muted-foreground ml-2">
-                        (No rooms available)
-                      </span>
-                    )}
-                  </h3>
-
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                    {allRooms.length > 0 ? (
-                      allRooms.map((room) => (
-                        <div
-                          key={room.id}
-                          className={`
-                            flex items-center justify-between p-3 rounded-md transition-colors
-                            ${
-                              selectedItems.includes(room.id)
-                                ? "bg-primary/10 border-primary/30"
-                                : "hover:bg-muted"
-                            }
-                            border cursor-pointer
-                          `}
-                          onClick={() => {
-                            setSelectedItems((prev) =>
-                              prev.includes(room.id)
-                                ? prev.filter((id) => id !== room.id)
-                                : [...prev, room.id]
-                            );
-                          }}
-                        >
-                          <div className="flex items-center">
-                            <div
-                              className={`w-4 h-4 mr-3 flex items-center justify-center rounded-sm border ${
-                                selectedItems.includes(room.id)
-                                  ? "bg-primary border-primary"
-                                  : "border-input"
-                              }`}
-                            >
-                              {selectedItems.includes(room.id) && (
-                                <CheckIcon className="h-3 w-3 text-primary-foreground" />
-                              )}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="font-medium text-sm">
-                                {room.name}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {room.type
-                                  ? room.type.replace("_", " ")
-                                  : "Room"}{" "}
-                                · {room._count?.devices || 0} device
-                                {room._count?.devices !== 1 ? "s" : ""}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                        <BarChart className="h-10 w-10 mb-2 opacity-20" />
-                        <p className="text-sm">
-                          No rooms available in this team
-                        </p>
-                        <p className="text-xs mt-1">
-                          You need to create rooms first
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <SheetFooter className="px-6 py-4 border-t">
-                  <SheetClose asChild>
-                    <Button className="w-full" size="sm">
-                      Done
-                    </Button>
-                  </SheetClose>
-                </SheetFooter>
-              </SheetContent>
-            </Sheet>
-          </div>
         </div>
       )}
 
-      {/* Rest of the dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Daily Trends Chart */}
-        <Card
-          className={`bg-card/80 backdrop-blur-sm ${
-            isComparing ? "md:col-span-2" : ""
-          }`}
-        >
+      <Card className="bg-card/80 backdrop-blur-sm">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-medium">
+              {isComparing
+                ? "Room Temperature Comparison"
+                : "Temperature & Humidity Trends"}
+            </CardTitle>
+            <TooltipProvider>
+              <UITooltip>
+                <TooltipTrigger>
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    {isComparing
+                      ? "Comparing temperature trends for selected rooms"
+                      : "24-hour trend for temperature and humidity"}
+                  </p>
+                </TooltipContent>
+              </UITooltip>
+            </TooltipProvider>
+          </div>
+          <CardDescription>
+            {isComparing
+              ? `Comparing ${selectedItems.length} rooms`
+              : "24-hour temperature and humidity trend"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isComparing && isLoadingComparison ? (
+            <div className="h-[300px] flex items-center justify-center">
+              <div className="flex flex-col items-center text-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+                <p className="text-muted-foreground">
+                  Loading comparison data...
+                </p>
+              </div>
+            </div>
+          ) : isComparing && Object.keys(comparisonData).length > 0 ? (
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={[]}
+                  margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="var(--border)"
+                    opacity={comparisonOptions.showGrid ? 0.5 : 0}
+                  />
+                  <XAxis
+                    dataKey="time"
+                    type="category"
+                    allowDuplicatedCategory={false}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <YAxis
+                    type="number"
+                    domain={
+                      comparisonOptions.normalizeScales
+                        ? ["auto", "auto"]
+                        : undefined
+                    }
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-popover/95 backdrop-blur-sm border border-border rounded-md p-2 shadow-md">
+                            <p className="font-medium text-sm mb-1">{label}</p>
+                            {payload.map((entry, index) => (
+                              <p
+                                key={`tooltip-${index}`}
+                                className="text-xs flex items-center gap-1 mb-1"
+                                style={{ color: entry.color }}
+                              >
+                                <span className="font-medium">
+                                  {entry.name}:
+                                </span>
+                                <span>
+                                  {`${entry.value}°${settings.temperatureUnit}`}
+                                </span>
+                              </p>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  {comparisonOptions.showLegend && (
+                    <Legend
+                      verticalAlign="top"
+                      height={36}
+                      iconType="circle"
+                      iconSize={8}
+                      formatter={(value, entry, index) => (
+                        <span className="text-xs">{value}</span>
+                      )}
+                    />
+                  )}
+
+                  {Object.entries(comparisonData).map(
+                    ([roomId, { name, color, data }], index) => (
+                      <Line
+                        key={roomId}
+                        data={data}
+                        type={
+                          comparisonOptions.smoothCurves ? "monotone" : "linear"
+                        }
+                        dataKey="temperature"
+                        name={name}
+                        stroke={color}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{
+                          r: 6,
+                          stroke: color,
+                          strokeWidth: 2,
+                          fill: "var(--background)",
+                        }}
+                        isAnimationActive={true}
+                      />
+                    )
+                  )}
+
+                  {comparisonOptions.showAverage &&
+                    Object.keys(comparisonData).length > 1 && (
+                      <Line
+                        type={
+                          comparisonOptions.smoothCurves ? "monotone" : "linear"
+                        }
+                        dataKey="avgTemp"
+                        stroke="var(--primary)"
+                        strokeDasharray="5 5"
+                        name="Average"
+                        strokeWidth={2}
+                        dot={false}
+                        data={(() => {
+                          // Calculate average temperature for each time point
+                          const allTimes = new Set<string>();
+                          const timeToReadings: { [key: string]: number[] } =
+                            {};
+
+                          // Collect all time points and readings
+                          Object.values(comparisonData).forEach(({ data }) => {
+                            data.forEach((point) => {
+                              allTimes.add(point.time);
+                              if (!timeToReadings[point.time]) {
+                                timeToReadings[point.time] = [];
+                              }
+                              timeToReadings[point.time].push(
+                                point.temperature
+                              );
+                            });
+                          });
+
+                          // Calculate averages
+                          return Array.from(allTimes)
+                            .sort()
+                            .map((time) => {
+                              const readings = timeToReadings[time];
+                              // Round average to 1 decimal place
+                              const avgTemp = parseFloat(
+                                (
+                                  readings.reduce(
+                                    (sum, temp) => sum + temp,
+                                    0
+                                  ) / readings.length
+                                ).toFixed(1)
+                              );
+                              return {
+                                time,
+                                avgTemp,
+                              };
+                            });
+                        })()}
+                      />
+                    )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : isComparing && selectedItems.length > 0 ? (
+            <div className="h-[300px] flex items-center justify-center flex-col p-6 text-center">
+              <div className="text-muted-foreground mb-2">
+                {Object.keys(comparisonData).length === 0 ? (
+                  <>
+                    <p className="mb-2">
+                      No data available for the selected rooms
+                    </p>
+                    <p className="text-xs text-destructive/70 mb-4">
+                      Check the console for more details about the API responses
+                    </p>
+                  </>
+                ) : (
+                  "Failed to display comparison chart"
+                )}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Force refresh comparison data
+                  setComparisonData({});
+                  lastComparisonFetchTimeRef.current = 0;
+                  fetchComparisonData();
+                }}
+              >
+                Retry loading data
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => setIsComparing(false)}
+              >
+                Return to normal view
+              </Button>
+            </div>
+          ) : dailyTrendData.length > 0 ? (
+            <ChartContainer
+              config={dailyTrendConfig}
+              className="h-[200px] w-full"
+            >
+              <AreaChart data={dailyTrendData} accessibilityLayer>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="var(--border)"
+                  opacity={0.3}
+                />
+                <XAxis
+                  dataKey="time"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 11 }}
+                />
+                <YAxis
+                  yAxisId="left"
+                  orientation="left"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 11 }}
+                />
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 11 }}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <ChartLegend content={<ChartLegendContent />} />
+                <defs>
+                  <linearGradient id="colorTemp" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="5%"
+                      stopColor="var(--color-temperature)"
+                      stopOpacity={0.5}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor="var(--color-temperature)"
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
+                  <linearGradient id="colorHumid" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="5%"
+                      stopColor="var(--color-humidity)"
+                      stopOpacity={0.5}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor="var(--color-humidity)"
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
+                </defs>
+                <Area
+                  yAxisId="left"
+                  type="monotone"
+                  dataKey="temperature"
+                  stroke="var(--color-temperature)"
+                  fillOpacity={1}
+                  fill="url(#colorTemp)"
+                  isAnimationActive={true}
+                />
+                <Area
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="humidity"
+                  stroke="var(--color-humidity)"
+                  fillOpacity={1}
+                  fill="url(#colorHumid)"
+                  isAnimationActive={true}
+                />
+              </AreaChart>
+            </ChartContainer>
+          ) : (
+            <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+              <p>No temperature data available for the last 24 hours</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Climate Quality or Humidity Comparison Card - hide when comparing */}
+      {!isComparing && (
+        <Card className="bg-card/80 backdrop-blur-sm">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-lg font-medium">
+                Climate Quality
+              </CardTitle>
+              <Activity className="h-5 w-5 text-primary" />
+            </div>
+            <CardDescription>Current room climate assessment</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col items-center justify-center h-[200px] text-center relative">
+              <div className="text-7xl mb-2">{comfortData.emoji}</div>
+              <h3 className={`text-2xl font-bold ${comfortData.color} mb-1`}>
+                {comfortData.message}
+              </h3>
+
+              {/* Current Temperature and Humidity */}
+              <div className="flex justify-center gap-6 mb-2 text-sm">
+                <div className="flex items-center">
+                  <Thermometer className="h-4 w-4 mr-1 text-rose-400" />
+                  <span>
+                    {dailyTrendData.length > 0
+                      ? `${dailyTrendData[
+                          dailyTrendData.length - 1
+                        ].temperature.toFixed(1)}°${settings.temperatureUnit}`
+                      : `--°${settings.temperatureUnit}`}
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <Droplet className="h-4 w-4 mr-1 text-blue-400" />
+                  <span>
+                    {dailyTrendData.length > 0
+                      ? `${dailyTrendData[
+                          dailyTrendData.length - 1
+                        ].humidity.toFixed(0)}${settings.humidityUnit}`
+                      : `--${settings.humidityUnit}`}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-sm text-muted-foreground max-w-xs mb-2">
+                {comfortData.status === "excellent" &&
+                  "Perfect temperature and humidity for this room type!"}
+                {comfortData.status === "good" &&
+                  "Very comfortable climate conditions for this room."}
+                {comfortData.status === "moderate" &&
+                  "Climate is acceptable but could be improved."}
+                {comfortData.status === "poor" &&
+                  "Climate conditions need adjustment for comfort."}
+                {comfortData.status === "bad" &&
+                  "Climate conditions are uncomfortable and need immediate attention."}
+              </p>
+
+              {comfortData.details && (
+                <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t border-border pt-2 mt-1 w-full">
+                  <div className="flex justify-between">
+                    <span>Ideal temperature:</span>
+                    <span className="font-medium">
+                      {comfortData.details.idealTempRange?.[0]}-
+                      {comfortData.details.idealTempRange?.[1]}°
+                      {settings.temperatureUnit}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Room type:</span>
+                    <span className="font-medium capitalize">
+                      {roomData?.type?.replace("_", " ") || "Unknown"}
+                    </span>
+                  </div>
+                  {roomData?.size && roomData?.capacity && (
+                    <div className="flex justify-between">
+                      <span>Space per person:</span>
+                      <span className="font-medium">
+                        {(roomData.size / roomData.capacity).toFixed(1)} m²
+                      </span>
+                    </div>
+                  )}
+                  {comfortData.details.requiredAirflow && (
+                    <div className="flex justify-between">
+                      <span>Required airflow:</span>
+                      <span className="font-medium">
+                        {comfortData.details.requiredAirflow} CFM
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Humidity comparison chart - Show only when comparing and humidity is enabled */}
+      {isComparing && comparisonOptions.includeHumidity && (
+        <Card className="bg-card/80 backdrop-blur-sm md:col-span-2">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg font-medium">
-                {isComparing ? `Temperature Comparison` : "Daily Trends"}
+                Humidity Comparison
               </CardTitle>
-              <div className="flex items-center gap-2">
-                {isComparing && isLoadingComparison && (
-                  <div className="flex items-center text-muted-foreground text-xs">
-                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                    Loading...
-                  </div>
-                )}
-                <BarChart className="h-5 w-5 text-primary" />
-              </div>
+              <Droplet className="h-5 w-5 text-primary" />
             </div>
             <CardDescription>
-              {isComparing
-                ? `Comparing temperature data for ${selectedItems.length} rooms`
-                : "Temperature and humidity over the last 24 hours"}
+              Comparing humidity data for {selectedItems.length} rooms
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isComparing && isLoadingComparison ? (
+            {isLoadingComparison ? (
               <div className="h-[300px] w-full flex flex-col items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
                 <p className="text-muted-foreground text-sm">
                   Loading comparison data...
                 </p>
               </div>
-            ) : isComparing && Object.keys(comparisonData).length > 0 ? (
-              <div className="h-[400px] w-full">
+            ) : Object.keys(comparisonData).length > 0 ? (
+              <div className="h-[350px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     margin={{ top: 10, right: 10, left: 10, bottom: 20 }}
@@ -1568,10 +1977,7 @@ const Dashboard = () => {
                       tick={{ fontSize: 11 }}
                       domain={
                         comparisonOptions.normalizeScales
-                          ? [
-                              (dataMin: number) => Math.floor(dataMin - 2),
-                              (dataMax: number) => Math.ceil(dataMax + 2),
-                            ]
+                          ? [0, 100]
                           : ["auto", "auto"]
                       }
                       width={30}
@@ -1589,13 +1995,10 @@ const Dashboard = () => {
                       }}
                       formatter={(value, name) => [
                         `${
-                          typeof value === "number" ? value.toFixed(1) : value
-                        }°${settings.temperatureUnit}`,
+                          typeof value === "number" ? value.toFixed(0) : value
+                        }${settings.humidityUnit}`,
                         name,
                       ]}
-                      wrapperStyle={{
-                        zIndex: 1000,
-                      }}
                     />
                     {comparisonOptions.showLegend && <Legend />}
 
@@ -1610,7 +2013,7 @@ const Dashboard = () => {
                           }
                           data={data}
                           name={name}
-                          dataKey="temperature"
+                          dataKey="humidity"
                           stroke={color}
                           strokeWidth={2}
                           dot={false}
@@ -1633,17 +2036,18 @@ const Dashboard = () => {
                               ? "monotone"
                               : "linear"
                           }
-                          dataKey="avgTemp"
+                          dataKey="avgHumid"
                           stroke="var(--primary)"
                           strokeDasharray="5 5"
                           name="Average"
                           strokeWidth={2}
                           dot={false}
                           data={(() => {
-                            // Calculate average temperature for each time point
+                            // Calculate average humidity for each time point
                             const allTimes = new Set<string>();
-                            const timeToReadings: { [key: string]: number[] } =
-                              {};
+                            const timeToReadings: {
+                              [key: string]: number[];
+                            } = {};
 
                             // Collect all time points and readings
                             Object.values(comparisonData).forEach(
@@ -1654,7 +2058,7 @@ const Dashboard = () => {
                                     timeToReadings[point.time] = [];
                                   }
                                   timeToReadings[point.time].push(
-                                    point.temperature
+                                    point.humidity
                                   );
                                 });
                               }
@@ -1665,18 +2069,18 @@ const Dashboard = () => {
                               .sort()
                               .map((time) => {
                                 const readings = timeToReadings[time];
-                                // Round average to 1 decimal place
-                                const avgTemp = parseFloat(
+                                // Round average to whole numbers
+                                const avgHumid = parseFloat(
                                   (
                                     readings.reduce(
-                                      (sum, temp) => sum + temp,
+                                      (sum, humid) => sum + humid,
                                       0
                                     ) / readings.length
-                                  ).toFixed(1)
+                                  ).toFixed(0)
                                 );
                                 return {
                                   time,
-                                  avgTemp,
+                                  avgHumid,
                                 };
                               });
                           })()}
@@ -1685,372 +2089,14 @@ const Dashboard = () => {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-            ) : isComparing && selectedItems.length > 0 ? (
-              <div className="h-[300px] flex items-center justify-center flex-col p-6 text-center">
-                <div className="text-muted-foreground mb-2">
-                  No data available for selected rooms
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsComparing(false)}
-                >
-                  Return to normal view
-                </Button>
-              </div>
-            ) : dailyTrendData.length > 0 ? (
-              <ChartContainer
-                config={dailyTrendConfig}
-                className="h-[200px] w-full"
-              >
-                <AreaChart data={dailyTrendData} accessibilityLayer>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="var(--border)"
-                    opacity={0.3}
-                  />
-                  <XAxis
-                    dataKey="time"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <YAxis
-                    yAxisId="left"
-                    orientation="left"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  <defs>
-                    <linearGradient id="colorTemp" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="5%"
-                        stopColor="var(--color-temperature)"
-                        stopOpacity={0.5}
-                      />
-                      <stop
-                        offset="95%"
-                        stopColor="var(--color-temperature)"
-                        stopOpacity={0}
-                      />
-                    </linearGradient>
-                    <linearGradient id="colorHumid" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="5%"
-                        stopColor="var(--color-humidity)"
-                        stopOpacity={0.5}
-                      />
-                      <stop
-                        offset="95%"
-                        stopColor="var(--color-humidity)"
-                        stopOpacity={0}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    yAxisId="left"
-                    type="monotone"
-                    dataKey="temperature"
-                    stroke="var(--color-temperature)"
-                    fillOpacity={1}
-                    fill="url(#colorTemp)"
-                    isAnimationActive={true}
-                  />
-                  <Area
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="humidity"
-                    stroke="var(--color-humidity)"
-                    fillOpacity={1}
-                    fill="url(#colorHumid)"
-                    isAnimationActive={true}
-                  />
-                </AreaChart>
-              </ChartContainer>
             ) : (
-              <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-                <p>No temperature data available for the last 24 hours</p>
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                <p>No humidity data available for comparison</p>
               </div>
             )}
           </CardContent>
         </Card>
-
-        {/* Climate Quality or Humidity Comparison Card - hide when comparing */}
-        {!isComparing && (
-          <Card className="bg-card/80 backdrop-blur-sm">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg font-medium">
-                  Climate Quality
-                </CardTitle>
-                <Activity className="h-5 w-5 text-primary" />
-              </div>
-              <CardDescription>Current room climate assessment</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col items-center justify-center h-[200px] text-center relative">
-                <div className="text-7xl mb-2">{comfortData.emoji}</div>
-                <h3 className={`text-2xl font-bold ${comfortData.color} mb-1`}>
-                  {comfortData.message}
-                </h3>
-
-                {/* Current Temperature and Humidity */}
-                <div className="flex justify-center gap-6 mb-2 text-sm">
-                  <div className="flex items-center">
-                    <Thermometer className="h-4 w-4 mr-1 text-rose-400" />
-                    <span>
-                      {dailyTrendData.length > 0
-                        ? `${dailyTrendData[
-                            dailyTrendData.length - 1
-                          ].temperature.toFixed(1)}°${settings.temperatureUnit}`
-                        : `--°${settings.temperatureUnit}`}
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <Droplet className="h-4 w-4 mr-1 text-blue-400" />
-                    <span>
-                      {dailyTrendData.length > 0
-                        ? `${dailyTrendData[
-                            dailyTrendData.length - 1
-                          ].humidity.toFixed(0)}${settings.humidityUnit}`
-                        : `--${settings.humidityUnit}`}
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-sm text-muted-foreground max-w-xs mb-2">
-                  {comfortData.status === "excellent" &&
-                    "Perfect temperature and humidity for this room type!"}
-                  {comfortData.status === "good" &&
-                    "Very comfortable climate conditions for this room."}
-                  {comfortData.status === "moderate" &&
-                    "Climate is acceptable but could be improved."}
-                  {comfortData.status === "poor" &&
-                    "Climate conditions need adjustment for comfort."}
-                  {comfortData.status === "bad" &&
-                    "Climate conditions are uncomfortable and need immediate attention."}
-                </p>
-
-                {comfortData.details && (
-                  <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t border-border pt-2 mt-1 w-full">
-                    <div className="flex justify-between">
-                      <span>Ideal temperature:</span>
-                      <span className="font-medium">
-                        {comfortData.details.idealTempRange?.[0]}-
-                        {comfortData.details.idealTempRange?.[1]}°
-                        {settings.temperatureUnit}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Room type:</span>
-                      <span className="font-medium capitalize">
-                        {roomData?.type?.replace("_", " ") || "Unknown"}
-                      </span>
-                    </div>
-                    {roomData?.size && roomData?.capacity && (
-                      <div className="flex justify-between">
-                        <span>Space per person:</span>
-                        <span className="font-medium">
-                          {(roomData.size / roomData.capacity).toFixed(1)} m²
-                        </span>
-                      </div>
-                    )}
-                    {comfortData.details.requiredAirflow && (
-                      <div className="flex justify-between">
-                        <span>Required airflow:</span>
-                        <span className="font-medium">
-                          {comfortData.details.requiredAirflow} CFM
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Humidity comparison chart - Show only when comparing and humidity is enabled */}
-        {isComparing && comparisonOptions.includeHumidity && (
-          <Card className="bg-card/80 backdrop-blur-sm md:col-span-2">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg font-medium">
-                  Humidity Comparison
-                </CardTitle>
-                <Droplet className="h-5 w-5 text-primary" />
-              </div>
-              <CardDescription>
-                Comparing humidity data for {selectedItems.length} rooms
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isLoadingComparison ? (
-                <div className="h-[300px] w-full flex flex-col items-center justify-center">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                  <p className="text-muted-foreground text-sm">
-                    Loading comparison data...
-                  </p>
-                </div>
-              ) : Object.keys(comparisonData).length > 0 ? (
-                <div className="h-[350px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart
-                      margin={{ top: 10, right: 10, left: 10, bottom: 20 }}
-                    >
-                      {comparisonOptions.showGrid && (
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="var(--border)"
-                          opacity={0.3}
-                        />
-                      )}
-                      <XAxis
-                        dataKey="time"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 11 }}
-                        allowDuplicatedCategory={false}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 11 }}
-                        domain={
-                          comparisonOptions.normalizeScales
-                            ? [0, 100]
-                            : ["auto", "auto"]
-                        }
-                        width={30}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          background: "var(--background)",
-                          border: "1px solid var(--border)",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                        }}
-                        labelStyle={{
-                          color: "var(--foreground)",
-                          fontWeight: "bold",
-                        }}
-                        formatter={(value, name) => [
-                          `${
-                            typeof value === "number" ? value.toFixed(0) : value
-                          }${settings.humidityUnit}`,
-                          name,
-                        ]}
-                      />
-                      {comparisonOptions.showLegend && <Legend />}
-
-                      {Object.entries(comparisonData).map(
-                        ([itemId, { name, color, data }]) => (
-                          <Line
-                            key={itemId}
-                            type={
-                              comparisonOptions.smoothCurves
-                                ? "monotone"
-                                : "linear"
-                            }
-                            data={data}
-                            name={name}
-                            dataKey="humidity"
-                            stroke={color}
-                            strokeWidth={2}
-                            dot={false}
-                            activeDot={{
-                              r: 6,
-                              stroke: color,
-                              strokeWidth: 2,
-                              fill: "var(--background)",
-                            }}
-                            isAnimationActive={true}
-                          />
-                        )
-                      )}
-
-                      {comparisonOptions.showAverage &&
-                        Object.keys(comparisonData).length > 1 && (
-                          <Line
-                            type={
-                              comparisonOptions.smoothCurves
-                                ? "monotone"
-                                : "linear"
-                            }
-                            dataKey="avgHumid"
-                            stroke="var(--primary)"
-                            strokeDasharray="5 5"
-                            name="Average"
-                            strokeWidth={2}
-                            dot={false}
-                            data={(() => {
-                              // Calculate average humidity for each time point
-                              const allTimes = new Set<string>();
-                              const timeToReadings: {
-                                [key: string]: number[];
-                              } = {};
-
-                              // Collect all time points and readings
-                              Object.values(comparisonData).forEach(
-                                ({ data }) => {
-                                  data.forEach((point) => {
-                                    allTimes.add(point.time);
-                                    if (!timeToReadings[point.time]) {
-                                      timeToReadings[point.time] = [];
-                                    }
-                                    timeToReadings[point.time].push(
-                                      point.humidity
-                                    );
-                                  });
-                                }
-                              );
-
-                              // Calculate averages
-                              return Array.from(allTimes)
-                                .sort()
-                                .map((time) => {
-                                  const readings = timeToReadings[time];
-                                  // Round average to whole numbers
-                                  const avgHumid = parseFloat(
-                                    (
-                                      readings.reduce(
-                                        (sum, humid) => sum + humid,
-                                        0
-                                      ) / readings.length
-                                    ).toFixed(0)
-                                  );
-                                  return {
-                                    time,
-                                    avgHumid,
-                                  };
-                                });
-                            })()}
-                          />
-                        )}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                  <p>No humidity data available for comparison</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </div>
+      )}
 
       {/* Comparison Stats Cards Section */}
       {isComparing && Object.keys(comparisonData).length > 0 && (
@@ -2292,6 +2338,38 @@ const Dashboard = () => {
             </Card>
           )}
       </div>
+
+      {isComparing && Object.keys(comparisonData).length > 0 && (
+        <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">
+          <details>
+            <summary className="cursor-pointer hover:text-foreground">
+              Debug information
+            </summary>
+            <div className="mt-1 space-y-1">
+              <div>Cache entries: {getComparisonDebugInfo().cacheEntries}</div>
+              <div>Throttle: {getComparisonDebugInfo().throttleStatus}</div>
+              <div>
+                Requests in progress:{" "}
+                {getComparisonDebugInfo().requestsInProgress}
+              </div>
+              <div className="mt-2">
+                {getComparisonDebugInfo().cacheInfo.map((info) => (
+                  <div key={info.roomName} className="flex justify-between">
+                    <span>{info.roomName}</span>
+                    <span
+                      className={
+                        info.isValid ? "text-green-500" : "text-yellow-500"
+                      }
+                    >
+                      {info.dataPoints} points, {info.age}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 };
