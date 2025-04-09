@@ -19,7 +19,19 @@ export async function POST(request: Request) {
     });
 
     if (findDevice) {
-      return NextResponse.json({ exists: true }, { status: 409 });
+      // Update the firmware version for existing device
+      const updatedDevice = await prisma.device.update({
+        where: {
+          device_id: deviceId,
+        },
+        data: {
+          firmwareVersion,
+          model: modelType,
+          lastSeenAt: new Date(),
+          firmwareStatus: "UP_TO_DATE",
+        },
+      });
+      return NextResponse.json(updatedDevice);
     }
 
     const device = await prisma.device.create({
@@ -27,6 +39,7 @@ export async function POST(request: Request) {
         device_id: deviceId,
         firmwareVersion,
         model: modelType,
+        firmwareStatus: "UP_TO_DATE",
       },
     });
 
