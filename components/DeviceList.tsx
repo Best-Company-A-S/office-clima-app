@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import {
   Thermometer,
   Droplet,
@@ -28,6 +29,7 @@ import {
   CheckCircle2,
   AlertCircle,
   RefreshCw,
+  Settings,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -305,7 +307,19 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
                           </span>
                         </CardDescription>
                       </div>
-                      {statusBadge}
+                      <div className="flex items-center gap-2">
+                        {statusBadge}
+                        <Link href={`/devices/${device.device_id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                          >
+                            <Settings className="h-4 w-4" />
+                            <span className="sr-only">Settings</span>
+                          </Button>
+                        </Link>
+                      </div>
                     </CardHeader>
                     <CardContent>
                       {device.lastReading ? (
@@ -396,6 +410,14 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
                         </div>
                       )}
                     </CardContent>
+                    <CardFooter className="pt-0 flex justify-end">
+                      <Link
+                        href={`/devices/${device.device_id}`}
+                        className="text-xs text-muted-foreground hover:text-primary hover:underline"
+                      >
+                        Manage device
+                      </Link>
+                    </CardFooter>
                   </Card>
                 </motion.div>
               );

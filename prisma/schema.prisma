@@ -68,14 +68,18 @@ model Device {
   description String?
   model String?
   firmwareVersion String?
+  firmwareStatus String? // "UP_TO_DATE", "UPDATING", "UPDATE_FAILED"
   isPaired Boolean @default(false)
   lastSeenAt DateTime?
+  lastUpdatedAt DateTime?
+  autoUpdate Boolean @default(false) // Whether to auto-update from GitHub releases
   roomId String?
   room Room? @relation(fields: [roomId], references: [id])
   pairedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   readings DeviceReading[]
+  firmwareDownloads FirmwareDownload[]
 }
 
 model DeviceReading {
@@ -151,4 +155,33 @@ model DashboardLayout {
   updatedAt DateTime @updatedAt
 
   @@index([teamId])
+}
+
+// New models for OTA updates
+model Firmware {
+  id           String   @id @default(uuid())
+  version      String   // e.g., "v0.6.0"
+  modelType    String   // e.g., "Arduino_UNO_R4_WiFi"
+  releaseNotes String?  @db.Text
+  filename     String
+  fileSize     Int
+  filePath     String
+  checksumMD5  String
+  status       String   // "DRAFT", "RELEASED", "DEPRECATED"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  downloads    FirmwareDownload[]
+
+  @@unique([modelType, version])
+}
+
+model FirmwareDownload {
+  id           String   @id @default(uuid())
+  deviceId     String
+  firmwareId   String
+  downloadedAt DateTime @default(now())
+  status       String   // "INITIATED", "COMPLETED", "FAILED", "INSTALLED"
+
+  device       Device   @relation(fields: [deviceId], references: [device_id])
+  firmware     Firmware @relation(fields: [firmwareId], references: [id])
 }
