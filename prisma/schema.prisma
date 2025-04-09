@@ -24,6 +24,7 @@ model Team {
   invites TeamInvite[]
   rooms Room[]
   settings TeamSettings[]
+  dashboardLayouts DashboardLayout[]
 }
 
 model TeamInvite {
@@ -118,9 +119,7 @@ model SurveyResponse {
   @@index([surveyId])
 }
 
-
- 
- model TeamSettings {
+model TeamSettings {
   id String @id @default(uuid())
   teamId String
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -139,4 +138,17 @@ model SurveyResponse {
   kioskMode Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
- }
+}
+
+model DashboardLayout {
+  id String @id @default(uuid())
+  teamId String
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  layout Json // Stores the grid layout configuration
+  isDefault Boolean @default(false)
+  name String @default("Default Layout")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teamId])
+}

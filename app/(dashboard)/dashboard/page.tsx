@@ -22,6 +22,9 @@ import {
   Settings,
   BarChart3,
   Info,
+  Save,
+  Layout,
+  Edit,
 } from "lucide-react";
 import axios from "axios";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -82,6 +85,12 @@ import {
 } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Responsive, WidthProvider } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
+
+const ResponsiveGridLayout = WidthProvider(Responsive);
 
 interface DeviceData {
   id: string;
@@ -138,6 +147,30 @@ interface DeviceInfo {
   name: string;
   roomId?: string;
   roomName?: string;
+}
+
+// New interface for dashboard layout
+interface DashboardLayout {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  layout: {
+    lg: GridItem[];
+    md: GridItem[];
+    sm: GridItem[];
+  };
+}
+
+interface GridItem {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minW?: number;
+  minH?: number;
+  maxW?: number;
+  maxH?: number;
 }
 
 // Define the room climate calculation function
@@ -242,6 +275,42 @@ const Dashboard = () => {
     temperatureUnit: "C",
     humidityUnit: "%",
   });
+
+  // Dashboard layout states
+  const [editLayoutMode, setEditLayoutMode] = useState(false);
+  const [availableLayouts, setAvailableLayouts] = useState<DashboardLayout[]>(
+    []
+  );
+  const [currentLayout, setCurrentLayout] = useState<DashboardLayout | null>(
+    null
+  );
+  const [newLayoutName, setNewLayoutName] = useState("My Custom Layout");
+  const [isSavingLayout, setIsSavingLayout] = useState(false);
+  const [isLoadingLayouts, setIsLoadingLayouts] = useState(true);
+
+  // Default layout configuration
+  const defaultLayout: DashboardLayout = {
+    id: "default",
+    name: "Default Layout",
+    isDefault: true,
+    layout: {
+      lg: [
+        { i: "temperature-trend", x: 0, y: 0, w: 12, h: 8, minW: 6, minH: 4 },
+        { i: "climate-quality", x: 0, y: 8, w: 12, h: 8, minW: 4, minH: 4 },
+        { i: "device-readings", x: 0, y: 16, w: 12, h: 12, minW: 6, minH: 8 },
+      ],
+      md: [
+        { i: "temperature-trend", x: 0, y: 0, w: 10, h: 7, minW: 6, minH: 4 },
+        { i: "climate-quality", x: 0, y: 7, w: 10, h: 7, minW: 4, minH: 4 },
+        { i: "device-readings", x: 0, y: 14, w: 10, h: 10, minW: 6, minH: 8 },
+      ],
+      sm: [
+        { i: "temperature-trend", x: 0, y: 0, w: 6, h: 6, minW: 4, minH: 4 },
+        { i: "climate-quality", x: 0, y: 6, w: 6, h: 6, minW: 4, minH: 4 },
+        { i: "device-readings", x: 0, y: 12, w: 6, h: 8, minW: 4, minH: 6 },
+      ],
+    },
+  };
 
   // Comparison related states
   const [allRooms, setAllRooms] = useState<RoomData[]>([]);
@@ -1147,7 +1216,121 @@ const Dashboard = () => {
     };
   };
 
-  if (isLoading) {
+  // Load saved dashboard layouts
+  const loadDashboardLayouts = useCallback(async () => {
+    const teamId = searchParams.get("teamId");
+    if (!teamId) {
+      setIsLoadingLayouts(false);
+      return;
+    }
+
+    try {
+      setIsLoadingLayouts(true);
+      const response = await axios.get(`/api/teams/${teamId}/layouts`);
+
+      if (response.data && response.data.length > 0) {
+        setAvailableLayouts(response.data);
+
+        // Find the default layout or use the first one
+        const defaultLayout =
+          response.data.find((layout: DashboardLayout) => layout.isDefault) ||
+          response.data[0];
+        setCurrentLayout(defaultLayout);
+      } else {
+        // If no layouts found, use the default one
+        setAvailableLayouts([defaultLayout]);
+        setCurrentLayout(defaultLayout);
+      }
+    } catch (error) {
+      console.error("Failed to load dashboard layouts:", error);
+      // If API fails, use the default layout
+      setAvailableLayouts([defaultLayout]);
+      setCurrentLayout(defaultLayout);
+    } finally {
+      setIsLoadingLayouts(false);
+    }
+  }, [searchParams]);
+
+  // Save the current layout
+  const saveCurrentLayout = async (makeDefault = false) => {
+    const teamId = searchParams.get("teamId");
+    if (!teamId || !currentLayout) return;
+
+    try {
+      setIsSavingLayout(true);
+
+      // Determine if this is a new layout or updating an existing one
+      const isNewLayout =
+        currentLayout.id === "default" ||
+        !availableLayouts.some((l) => l.id === currentLayout.id);
+
+      const layoutToSave = {
+        ...currentLayout,
+        name: newLayoutName || currentLayout.name,
+        isDefault: makeDefault,
+        teamId,
+      };
+
+      if (isNewLayout) {
+        // Create new layout
+        const response = await axios.post(
+          `/api/teams/${teamId}/layouts`,
+          layoutToSave
+        );
+        if (response.data) {
+          // Update the layout list with the new layout
+          setAvailableLayouts((prev) => [...prev, response.data]);
+          setCurrentLayout(response.data);
+        }
+      } else {
+        // Update existing layout
+        const response = await axios.put(
+          `/api/teams/${teamId}/layouts/${currentLayout.id}`,
+          layoutToSave
+        );
+        if (response.data) {
+          // Update the layout in the list
+          setAvailableLayouts((prev) =>
+            prev.map((layout) =>
+              layout.id === currentLayout.id ? response.data : layout
+            )
+          );
+          setCurrentLayout(response.data);
+        }
+      }
+
+      // If making this the default, update all other layouts
+      if (makeDefault) {
+        await axios.put(
+          `/api/teams/${teamId}/layouts/default/${currentLayout.id}`
+        );
+      }
+
+      setEditLayoutMode(false);
+    } catch (error) {
+      console.error("Failed to save layout:", error);
+    } finally {
+      setIsSavingLayout(false);
+    }
+  };
+
+  // Handle layout change
+  const handleLayoutChange = (layout: any, layouts: any) => {
+    if (!editLayoutMode || !currentLayout) return;
+
+    // Update the current layout with the new grid positions
+    setCurrentLayout({
+      ...currentLayout,
+      layout: layouts,
+    });
+  };
+
+  // Load dashboard layouts when team changes
+  useEffect(() => {
+    loadDashboardLayouts();
+  }, [loadDashboardLayouts]);
+
+  if (isLoading || isLoadingLayouts) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[70vh]">
         <div className="text-center">
@@ -1168,179 +1351,271 @@ const Dashboard = () => {
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {!isComparing ? (
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 flex-shrink-0"
-                >
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  <span>Compare Rooms</span>
-                  <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent className="w-[90vw] sm:w-[440px] p-0">
-                <SheetHeader className="p-6 pb-2">
-                  <SheetTitle>Compare Room Climate</SheetTitle>
-                  <SheetDescription>
-                    Select rooms to compare their climate data
-                  </SheetDescription>
-                </SheetHeader>
-
-                <div className="px-6 py-4 border-t">
-                  <h3 className="text-sm font-medium mb-3">
-                    Select Rooms
-                    {allRooms.length === 0 && (
-                      <span className="text-xs font-normal text-muted-foreground ml-2">
-                        (No rooms available)
-                      </span>
+            <>
+              {/* Layout customization buttons */}
+              {editLayoutMode ? (
+                <>
+                  <div className="flex items-center border rounded-md pl-2 pr-1 h-9">
+                    <Input
+                      className="h-7 border-0 px-1 text-sm w-40"
+                      placeholder="Layout name"
+                      value={newLayoutName}
+                      onChange={(e) => setNewLayoutName(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => setEditLayoutMode(false)}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => saveCurrentLayout(false)}
+                    disabled={isSavingLayout}
+                  >
+                    {isSavingLayout ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-1" />
                     )}
-                  </h3>
-
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                    {allRooms.length > 0 ? (
-                      allRooms.map((room) => (
-                        <div
-                          key={room.id}
-                          className={`
-                            flex items-center justify-between p-3 rounded-md transition-colors
-                            ${
-                              selectedItems.includes(room.id)
-                                ? "bg-primary/10 border-primary/30"
-                                : "hover:bg-muted"
-                            }
-                            border cursor-pointer
-                          `}
-                          onClick={() => {
-                            setSelectedItems((prev) =>
-                              prev.includes(room.id)
-                                ? prev.filter((id) => id !== room.id)
-                                : [...prev, room.id]
-                            );
-                          }}
+                    Save Layout
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {availableLayouts.length > 1 && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 flex-shrink-0"
                         >
-                          <div className="flex items-center">
-                            <div
-                              className={`w-4 h-4 mr-3 flex items-center justify-center rounded-sm border ${
+                          <Layout className="h-4 w-4 mr-2" />
+                          <span>{currentLayout?.name || "Select Layout"}</span>
+                          <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="p-0" align="end">
+                        <Command>
+                          <CommandInput placeholder="Search layouts..." />
+                          <CommandEmpty>No layouts found.</CommandEmpty>
+                          <CommandGroup>
+                            {availableLayouts.map((layout) => (
+                              <CommandItem
+                                key={layout.id}
+                                onSelect={() => {
+                                  setCurrentLayout(layout);
+                                }}
+                              >
+                                <Layout className="h-4 w-4 mr-2" />
+                                <span>{layout.name}</span>
+                                {layout.id === currentLayout?.id && (
+                                  <CheckIcon className="h-4 w-4 ml-auto" />
+                                )}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => setEditLayoutMode(true)}
+                  >
+                    <Edit className="h-4 w-4 mr-1" />
+                    <span className="sr-only md:not-sr-only">
+                      Customize Layout
+                    </span>
+                  </Button>
+                </>
+              )}
+
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 flex-shrink-0"
+                  >
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    <span>Compare Rooms</span>
+                    <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
+                  </Button>
+                </SheetTrigger>
+                <SheetContent className="w-[90vw] sm:w-[440px] p-0">
+                  <SheetHeader className="p-6 pb-2">
+                    <SheetTitle>Compare Room Climate</SheetTitle>
+                    <SheetDescription>
+                      Select rooms to compare their climate data
+                    </SheetDescription>
+                  </SheetHeader>
+
+                  <div className="px-6 py-4 border-t">
+                    <h3 className="text-sm font-medium mb-3">
+                      Select Rooms
+                      {allRooms.length === 0 && (
+                        <span className="text-xs font-normal text-muted-foreground ml-2">
+                          (No rooms available)
+                        </span>
+                      )}
+                    </h3>
+
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                      {allRooms.length > 0 ? (
+                        allRooms.map((room) => (
+                          <div
+                            key={room.id}
+                            className={`
+                              flex items-center justify-between p-3 rounded-md transition-colors
+                              ${
                                 selectedItems.includes(room.id)
-                                  ? "bg-primary border-primary"
-                                  : "border-input"
-                              }`}
-                            >
-                              {selectedItems.includes(room.id) && (
-                                <CheckIcon className="h-3 w-3 text-primary-foreground" />
-                              )}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="font-medium text-sm">
-                                {room.name}
-                              </span>
-                              <span className="text-xs text-muted-foreground">
-                                {room.type
-                                  ? room.type.replace("_", " ")
-                                  : "Room"}{" "}
-                                · {room._count?.devices || 0} device
-                                {room._count?.devices !== 1 ? "s" : ""}
-                              </span>
+                                  ? "bg-primary/10 border-primary/30"
+                                  : "hover:bg-muted"
+                              }
+                              border cursor-pointer
+                            `}
+                            onClick={() => {
+                              setSelectedItems((prev) =>
+                                prev.includes(room.id)
+                                  ? prev.filter((id) => id !== room.id)
+                                  : [...prev, room.id]
+                              );
+                            }}
+                          >
+                            <div className="flex items-center">
+                              <div
+                                className={`w-4 h-4 mr-3 flex items-center justify-center rounded-sm border ${
+                                  selectedItems.includes(room.id)
+                                    ? "bg-primary border-primary"
+                                    : "border-input"
+                                }`}
+                              >
+                                {selectedItems.includes(room.id) && (
+                                  <CheckIcon className="h-3 w-3 text-primary-foreground" />
+                                )}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="font-medium text-sm">
+                                  {room.name}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {room.type
+                                    ? room.type.replace("_", " ")
+                                    : "Room"}{" "}
+                                  · {room._count?.devices || 0} device
+                                  {room._count?.devices !== 1 ? "s" : ""}
+                                </span>
+                              </div>
                             </div>
                           </div>
+                        ))
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                          <BarChart className="h-10 w-10 mb-2 opacity-20" />
+                          <p className="text-sm">
+                            No rooms available in this team
+                          </p>
+                          <p className="text-xs mt-1">
+                            You need to create rooms first
+                          </p>
                         </div>
-                      ))
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                        <BarChart className="h-10 w-10 mb-2 opacity-20" />
-                        <p className="text-sm">
-                          No rooms available in this team
-                        </p>
-                        <p className="text-xs mt-1">
-                          You need to create rooms first
-                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-4 border-t">
+                    <h3 className="text-sm font-medium mb-3">
+                      Display Options
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="show-humidity" className="text-sm">
+                          Include humidity data
+                        </Label>
+                        <Switch
+                          id="show-humidity"
+                          checked={comparisonOptions.includeHumidity}
+                          onCheckedChange={(checked) =>
+                            setComparisonOptions((prev) => ({
+                              ...prev,
+                              includeHumidity: checked,
+                            }))
+                          }
+                        />
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="px-6 py-4 border-t">
-                  <h3 className="text-sm font-medium mb-3">Display Options</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="show-humidity" className="text-sm">
-                        Include humidity data
-                      </Label>
-                      <Switch
-                        id="show-humidity"
-                        checked={comparisonOptions.includeHumidity}
-                        onCheckedChange={(checked) =>
-                          setComparisonOptions((prev) => ({
-                            ...prev,
-                            includeHumidity: checked,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="smooth-curves" className="text-sm">
-                        Smooth curves
-                      </Label>
-                      <Switch
-                        id="smooth-curves"
-                        checked={comparisonOptions.smoothCurves}
-                        onCheckedChange={(checked) =>
-                          setComparisonOptions((prev) => ({
-                            ...prev,
-                            smoothCurves: checked,
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="normalize-scales" className="text-sm">
-                        Normalize scales
-                      </Label>
-                      <Switch
-                        id="normalize-scales"
-                        checked={comparisonOptions.normalizeScales}
-                        onCheckedChange={(checked) =>
-                          setComparisonOptions((prev) => ({
-                            ...prev,
-                            normalizeScales: checked,
-                          }))
-                        }
-                      />
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="smooth-curves" className="text-sm">
+                          Smooth curves
+                        </Label>
+                        <Switch
+                          id="smooth-curves"
+                          checked={comparisonOptions.smoothCurves}
+                          onCheckedChange={(checked) =>
+                            setComparisonOptions((prev) => ({
+                              ...prev,
+                              smoothCurves: checked,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="normalize-scales" className="text-sm">
+                          Normalize scales
+                        </Label>
+                        <Switch
+                          id="normalize-scales"
+                          checked={comparisonOptions.normalizeScales}
+                          onCheckedChange={(checked) =>
+                            setComparisonOptions((prev) => ({
+                              ...prev,
+                              normalizeScales: checked,
+                            }))
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <SheetFooter className="px-6 py-4 border-t">
-                  <SheetClose asChild>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="w-full"
-                      disabled={selectedItems.length === 0}
-                    >
-                      Cancel
-                    </Button>
-                  </SheetClose>
-                  <SheetClose asChild>
-                    <Button
-                      className="w-full"
-                      size="sm"
-                      disabled={selectedItems.length === 0}
-                      onClick={() => {
-                        if (selectedItems.length > 0) {
-                          setIsComparing(true);
-                        }
-                      }}
-                    >
-                      Compare {selectedItems.length} Room
-                      {selectedItems.length !== 1 ? "s" : ""}
-                    </Button>
-                  </SheetClose>
-                </SheetFooter>
-              </SheetContent>
-            </Sheet>
+                  <SheetFooter className="px-6 py-4 border-t">
+                    <SheetClose asChild>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="w-full"
+                        disabled={selectedItems.length === 0}
+                      >
+                        Cancel
+                      </Button>
+                    </SheetClose>
+                    <SheetClose asChild>
+                      <Button
+                        className="w-full"
+                        size="sm"
+                        disabled={selectedItems.length === 0}
+                        onClick={() => {
+                          if (selectedItems.length > 0) {
+                            setIsComparing(true);
+                          }
+                        }}
+                      >
+                        Compare {selectedItems.length} Room
+                        {selectedItems.length !== 1 ? "s" : ""}
+                      </Button>
+                    </SheetClose>
+                  </SheetFooter>
+                </SheetContent>
+              </Sheet>
+            </>
           ) : (
             <>
               <Button
@@ -1468,6 +1743,17 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {editLayoutMode && (
+        <div className="bg-muted/40 border rounded-lg p-3">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-medium">Customize Dashboard Layout</h3>
+            <div className="text-sm text-muted-foreground">
+              Drag and resize the cards to customize your dashboard
+            </div>
+          </div>
+        </div>
+      )}
+
       {isComparing && (
         <div className="bg-muted/40 border rounded-lg p-3 flex items-center justify-between mb-4">
           <div className="flex items-center">
@@ -1519,825 +1805,267 @@ const Dashboard = () => {
         </div>
       )}
 
-      <Card className="bg-card/80 backdrop-blur-sm">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg font-medium">
-              {isComparing
-                ? "Room Temperature Comparison"
-                : "Temperature & Humidity Trends"}
-            </CardTitle>
-            <TooltipProvider>
-              <UITooltip>
-                <TooltipTrigger>
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {isComparing
-                      ? "Comparing temperature trends for selected rooms"
-                      : "24-hour trend for temperature and humidity"}
-                  </p>
-                </TooltipContent>
-              </UITooltip>
-            </TooltipProvider>
-          </div>
-          <CardDescription>
-            {isComparing
-              ? `Comparing ${selectedItems.length} rooms`
-              : "24-hour temperature and humidity trend"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isComparing && isLoadingComparison ? (
-            <div className="h-[300px] flex items-center justify-center">
-              <div className="flex flex-col items-center text-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                <p className="text-muted-foreground">
-                  Loading comparison data...
-                </p>
-              </div>
-            </div>
-          ) : isComparing && Object.keys(comparisonData).length > 0 ? (
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={[]}
-                  margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="var(--border)"
-                    opacity={comparisonOptions.showGrid ? 0.5 : 0}
-                  />
-                  <XAxis
-                    dataKey="time"
-                    type="category"
-                    allowDuplicatedCategory={false}
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <YAxis
-                    type="number"
-                    domain={
-                      comparisonOptions.normalizeScales
-                        ? ["auto", "auto"]
-                        : undefined
-                    }
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 11 }}
-                  />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (active && payload && payload.length) {
-                        return (
-                          <div className="bg-popover/95 backdrop-blur-sm border border-border rounded-md p-2 shadow-md">
-                            <p className="font-medium text-sm mb-1">{label}</p>
-                            {payload.map((entry, index) => (
-                              <p
-                                key={`tooltip-${index}`}
-                                className="text-xs flex items-center gap-1 mb-1"
-                                style={{ color: entry.color }}
-                              >
-                                <span className="font-medium">
-                                  {entry.name}:
-                                </span>
-                                <span>
-                                  {`${entry.value}°${settings.temperatureUnit}`}
-                                </span>
-                              </p>
-                            ))}
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  {comparisonOptions.showLegend && (
-                    <Legend
-                      verticalAlign="top"
-                      height={36}
-                      iconType="circle"
-                      iconSize={8}
-                      formatter={(value, entry, index) => (
-                        <span className="text-xs">{value}</span>
-                      )}
-                    />
-                  )}
-
-                  {Object.entries(comparisonData).map(
-                    ([roomId, { name, color, data }], index) => (
-                      <Line
-                        key={roomId}
-                        data={data}
-                        type={
-                          comparisonOptions.smoothCurves ? "monotone" : "linear"
-                        }
-                        dataKey="temperature"
-                        name={name}
-                        stroke={color}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{
-                          r: 6,
-                          stroke: color,
-                          strokeWidth: 2,
-                          fill: "var(--background)",
-                        }}
-                        isAnimationActive={true}
-                      />
-                    )
-                  )}
-
-                  {comparisonOptions.showAverage &&
-                    Object.keys(comparisonData).length > 1 && (
-                      <Line
-                        type={
-                          comparisonOptions.smoothCurves ? "monotone" : "linear"
-                        }
-                        dataKey="avgTemp"
-                        stroke="var(--primary)"
-                        strokeDasharray="5 5"
-                        name="Average"
-                        strokeWidth={2}
-                        dot={false}
-                        data={(() => {
-                          // Calculate average temperature for each time point
-                          const allTimes = new Set<string>();
-                          const timeToReadings: { [key: string]: number[] } =
-                            {};
-
-                          // Collect all time points and readings
-                          Object.values(comparisonData).forEach(({ data }) => {
-                            data.forEach((point) => {
-                              allTimes.add(point.time);
-                              if (!timeToReadings[point.time]) {
-                                timeToReadings[point.time] = [];
-                              }
-                              timeToReadings[point.time].push(
-                                point.temperature
-                              );
-                            });
-                          });
-
-                          // Calculate averages
-                          return Array.from(allTimes)
-                            .sort()
-                            .map((time) => {
-                              const readings = timeToReadings[time];
-                              // Round average to 1 decimal place
-                              const avgTemp = parseFloat(
-                                (
-                                  readings.reduce(
-                                    (sum, temp) => sum + temp,
-                                    0
-                                  ) / readings.length
-                                ).toFixed(1)
-                              );
-                              return {
-                                time,
-                                avgTemp,
-                              };
-                            });
-                        })()}
-                      />
-                    )}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : isComparing && selectedItems.length > 0 ? (
-            <div className="h-[300px] flex items-center justify-center flex-col p-6 text-center">
-              <div className="text-muted-foreground mb-2">
-                {Object.keys(comparisonData).length === 0 ? (
-                  <>
-                    <p className="mb-2">
-                      No data available for the selected rooms
-                    </p>
-                    <p className="text-xs text-destructive/70 mb-4">
-                      Check the console for more details about the API responses
-                    </p>
-                  </>
-                ) : (
-                  "Failed to display comparison chart"
-                )}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  // Force refresh comparison data
-                  setComparisonData({});
-                  lastComparisonFetchTimeRef.current = 0;
-                  fetchComparisonData();
-                }}
-              >
-                Retry loading data
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                onClick={() => setIsComparing(false)}
-              >
-                Return to normal view
-              </Button>
-            </div>
-          ) : dailyTrendData.length > 0 ? (
-            <ChartContainer
-              config={dailyTrendConfig}
-              className="h-[200px] w-full"
-            >
-              <AreaChart data={dailyTrendData} accessibilityLayer>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="var(--border)"
-                  opacity={0.3}
-                />
-                <XAxis
-                  dataKey="time"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 11 }}
-                />
-                <YAxis
-                  yAxisId="left"
-                  orientation="left"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 11 }}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 11 }}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <ChartLegend content={<ChartLegendContent />} />
-                <defs>
-                  <linearGradient id="colorTemp" x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="5%"
-                      stopColor="var(--color-temperature)"
-                      stopOpacity={0.5}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--color-temperature)"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                  <linearGradient id="colorHumid" x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="5%"
-                      stopColor="var(--color-humidity)"
-                      stopOpacity={0.5}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--color-humidity)"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-                <Area
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="temperature"
-                  stroke="var(--color-temperature)"
-                  fillOpacity={1}
-                  fill="url(#colorTemp)"
-                  isAnimationActive={true}
-                />
-                <Area
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="humidity"
-                  stroke="var(--color-humidity)"
-                  fillOpacity={1}
-                  fill="url(#colorHumid)"
-                  isAnimationActive={true}
-                />
-              </AreaChart>
-            </ChartContainer>
-          ) : (
-            <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-              <p>No temperature data available for the last 24 hours</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Climate Quality or Humidity Comparison Card - hide when comparing */}
-      {!isComparing && (
-        <Card className="bg-card/80 backdrop-blur-sm">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg font-medium">
-                Climate Quality
-              </CardTitle>
-              <Activity className="h-5 w-5 text-primary" />
-            </div>
-            <CardDescription>Current room climate assessment</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col items-center justify-center h-[200px] text-center relative">
-              <div className="text-7xl mb-2">{comfortData.emoji}</div>
-              <h3 className={`text-2xl font-bold ${comfortData.color} mb-1`}>
-                {comfortData.message}
-              </h3>
-
-              {/* Current Temperature and Humidity */}
-              <div className="flex justify-center gap-6 mb-2 text-sm">
-                <div className="flex items-center">
-                  <Thermometer className="h-4 w-4 mr-1 text-rose-400" />
-                  <span>
-                    {dailyTrendData.length > 0
-                      ? `${dailyTrendData[
-                          dailyTrendData.length - 1
-                        ].temperature.toFixed(1)}°${settings.temperatureUnit}`
-                      : `--°${settings.temperatureUnit}`}
-                  </span>
+      {!isComparing && currentLayout && (
+        <ResponsiveGridLayout
+          className="layout"
+          layouts={currentLayout.layout}
+          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+          cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+          rowHeight={40}
+          isDraggable={editLayoutMode}
+          isResizable={editLayoutMode}
+          onLayoutChange={handleLayoutChange}
+        >
+          <div key="temperature-trend">
+            <Card className="bg-card/80 backdrop-blur-sm h-full">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg font-medium">
+                    Temperature & Humidity Trends
+                  </CardTitle>
+                  <TooltipProvider>
+                    <UITooltip>
+                      <TooltipTrigger>
+                        <Info className="h-4 w-4 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>24-hour trend for temperature and humidity</p>
+                      </TooltipContent>
+                    </UITooltip>
+                  </TooltipProvider>
                 </div>
-                <div className="flex items-center">
-                  <Droplet className="h-4 w-4 mr-1 text-blue-400" />
-                  <span>
-                    {dailyTrendData.length > 0
-                      ? `${dailyTrendData[
-                          dailyTrendData.length - 1
-                        ].humidity.toFixed(0)}${settings.humidityUnit}`
-                      : `--${settings.humidityUnit}`}
-                  </span>
-                </div>
-              </div>
-
-              <p className="text-sm text-muted-foreground max-w-xs mb-2">
-                {comfortData.status === "excellent" &&
-                  "Perfect temperature and humidity for this room type!"}
-                {comfortData.status === "good" &&
-                  "Very comfortable climate conditions for this room."}
-                {comfortData.status === "moderate" &&
-                  "Climate is acceptable but could be improved."}
-                {comfortData.status === "poor" &&
-                  "Climate conditions need adjustment for comfort."}
-                {comfortData.status === "bad" &&
-                  "Climate conditions are uncomfortable and need immediate attention."}
-              </p>
-
-              {comfortData.details && (
-                <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t border-border pt-2 mt-1 w-full">
-                  <div className="flex justify-between">
-                    <span>Ideal temperature:</span>
-                    <span className="font-medium">
-                      {comfortData.details.idealTempRange?.[0]}-
-                      {comfortData.details.idealTempRange?.[1]}°
-                      {settings.temperatureUnit}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Room type:</span>
-                    <span className="font-medium capitalize">
-                      {roomData?.type?.replace("_", " ") || "Unknown"}
-                    </span>
-                  </div>
-                  {roomData?.size && roomData?.capacity && (
-                    <div className="flex justify-between">
-                      <span>Space per person:</span>
-                      <span className="font-medium">
-                        {(roomData.size / roomData.capacity).toFixed(1)} m²
-                      </span>
-                    </div>
-                  )}
-                  {comfortData.details.requiredAirflow && (
-                    <div className="flex justify-between">
-                      <span>Required airflow:</span>
-                      <span className="font-medium">
-                        {comfortData.details.requiredAirflow} CFM
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Humidity comparison chart - Show only when comparing and humidity is enabled */}
-      {isComparing && comparisonOptions.includeHumidity && (
-        <Card className="bg-card/80 backdrop-blur-sm md:col-span-2">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg font-medium">
-                Humidity Comparison
-              </CardTitle>
-              <Droplet className="h-5 w-5 text-primary" />
-            </div>
-            <CardDescription>
-              Comparing humidity data for {selectedItems.length} rooms
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoadingComparison ? (
-              <div className="h-[300px] w-full flex flex-col items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-                <p className="text-muted-foreground text-sm">
-                  Loading comparison data...
-                </p>
-              </div>
-            ) : Object.keys(comparisonData).length > 0 ? (
-              <div className="h-[350px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    margin={{ top: 10, right: 10, left: 10, bottom: 20 }}
+                <CardDescription>
+                  24-hour temperature and humidity trend
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="h-[calc(100%-98px)]">
+                {dailyTrendData.length > 0 ? (
+                  <ChartContainer
+                    config={dailyTrendConfig}
+                    className="h-full w-full"
                   >
-                    {comparisonOptions.showGrid && (
+                    <AreaChart data={dailyTrendData} accessibilityLayer>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         vertical={false}
                         stroke="var(--border)"
                         opacity={0.3}
                       />
-                    )}
-                    <XAxis
-                      dataKey="time"
-                      tickLine={false}
-                      axisLine={false}
-                      tick={{ fontSize: 11 }}
-                      allowDuplicatedCategory={false}
-                    />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      tick={{ fontSize: 11 }}
-                      domain={
-                        comparisonOptions.normalizeScales
-                          ? [0, 100]
-                          : ["auto", "auto"]
-                      }
-                      width={30}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "var(--background)",
-                        border: "1px solid var(--border)",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                      }}
-                      labelStyle={{
-                        color: "var(--foreground)",
-                        fontWeight: "bold",
-                      }}
-                      formatter={(value, name) => [
-                        `${
-                          typeof value === "number" ? value.toFixed(0) : value
-                        }${settings.humidityUnit}`,
-                        name,
-                      ]}
-                    />
-                    {comparisonOptions.showLegend && <Legend />}
+                      <XAxis
+                        dataKey="time"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <YAxis
+                        yAxisId="left"
+                        orientation="left"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <YAxis
+                        yAxisId="right"
+                        orientation="right"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <ChartTooltip content={<ChartTooltipContent />} />
+                      <ChartLegend content={<ChartLegendContent />} />
+                      <defs>
+                        <linearGradient
+                          id="colorTemp"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor="var(--color-temperature)"
+                            stopOpacity={0.5}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="var(--color-temperature)"
+                            stopOpacity={0}
+                          />
+                        </linearGradient>
+                        <linearGradient
+                          id="colorHumid"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="5%"
+                            stopColor="var(--color-humidity)"
+                            stopOpacity={0.5}
+                          />
+                          <stop
+                            offset="95%"
+                            stopColor="var(--color-humidity)"
+                            stopOpacity={0}
+                          />
+                        </linearGradient>
+                      </defs>
+                      <Area
+                        yAxisId="left"
+                        type="monotone"
+                        dataKey="temperature"
+                        stroke="var(--color-temperature)"
+                        fillOpacity={1}
+                        fill="url(#colorTemp)"
+                        isAnimationActive={true}
+                      />
+                      <Area
+                        yAxisId="right"
+                        type="monotone"
+                        dataKey="humidity"
+                        stroke="var(--color-humidity)"
+                        fillOpacity={1}
+                        fill="url(#colorHumid)"
+                        isAnimationActive={true}
+                      />
+                    </AreaChart>
+                  </ChartContainer>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted-foreground">
+                    <p>No temperature data available for the last 24 hours</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-                    {Object.entries(comparisonData).map(
-                      ([itemId, { name, color, data }]) => (
-                        <Line
-                          key={itemId}
-                          type={
-                            comparisonOptions.smoothCurves
-                              ? "monotone"
-                              : "linear"
-                          }
-                          data={data}
-                          name={name}
-                          dataKey="humidity"
-                          stroke={color}
-                          strokeWidth={2}
-                          dot={false}
-                          activeDot={{
-                            r: 6,
-                            stroke: color,
-                            strokeWidth: 2,
-                            fill: "var(--background)",
-                          }}
-                          isAnimationActive={true}
-                        />
-                      )
-                    )}
-
-                    {comparisonOptions.showAverage &&
-                      Object.keys(comparisonData).length > 1 && (
-                        <Line
-                          type={
-                            comparisonOptions.smoothCurves
-                              ? "monotone"
-                              : "linear"
-                          }
-                          dataKey="avgHumid"
-                          stroke="var(--primary)"
-                          strokeDasharray="5 5"
-                          name="Average"
-                          strokeWidth={2}
-                          dot={false}
-                          data={(() => {
-                            // Calculate average humidity for each time point
-                            const allTimes = new Set<string>();
-                            const timeToReadings: {
-                              [key: string]: number[];
-                            } = {};
-
-                            // Collect all time points and readings
-                            Object.values(comparisonData).forEach(
-                              ({ data }) => {
-                                data.forEach((point) => {
-                                  allTimes.add(point.time);
-                                  if (!timeToReadings[point.time]) {
-                                    timeToReadings[point.time] = [];
-                                  }
-                                  timeToReadings[point.time].push(
-                                    point.humidity
-                                  );
-                                });
-                              }
-                            );
-
-                            // Calculate averages
-                            return Array.from(allTimes)
-                              .sort()
-                              .map((time) => {
-                                const readings = timeToReadings[time];
-                                // Round average to whole numbers
-                                const avgHumid = parseFloat(
-                                  (
-                                    readings.reduce(
-                                      (sum, humid) => sum + humid,
-                                      0
-                                    ) / readings.length
-                                  ).toFixed(0)
-                                );
-                                return {
-                                  time,
-                                  avgHumid,
-                                };
-                              });
-                          })()}
-                        />
-                      )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                <p>No humidity data available for comparison</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Comparison Stats Cards Section */}
-      {isComparing && Object.keys(comparisonData).length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-4">
-          {Object.entries(comparisonData).map(
-            ([itemId, { name, color, data }]) => {
-              if (!data.length) return null;
-
-              // Calculate averages
-              const avgTemp =
-                data.reduce((sum, item) => sum + item.temperature, 0) /
-                data.length;
-              const avgHumid =
-                data.reduce((sum, item) => sum + item.humidity, 0) /
-                data.length;
-
-              // Find min/max
-              const maxTemp = Math.max(...data.map((item) => item.temperature));
-              const minTemp = Math.min(...data.map((item) => item.temperature));
-              const maxHumid = Math.max(...data.map((item) => item.humidity));
-              const minHumid = Math.min(...data.map((item) => item.humidity));
-
-              // Find latest reading
-              const latestReading = data[data.length - 1];
-
-              // Calculate climate quality
-              const climateQuality = assessBasicClimate(
-                latestReading.temperature,
-                latestReading.humidity
-              );
-
-              return (
-                <Card
-                  key={itemId}
-                  className="bg-card/80 backdrop-blur-sm overflow-hidden"
-                >
-                  <div className="h-1" style={{ backgroundColor: color }}></div>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-base font-medium truncate">
-                        {name}
-                      </CardTitle>
-                      <div className="flex items-center gap-2">
-                        <div className="text-xl" title={climateQuality.message}>
-                          {climateQuality.emoji}
-                        </div>
-                        <Thermometer className="h-4 w-4" style={{ color }} />
-                      </div>
-                    </div>
-                    <CardDescription>
-                      Latest reading: {latestReading.time} · Room statistics
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground">
-                          Latest Temp
-                        </p>
-                        <p className="text-xl font-bold flex items-center">
-                          {latestReading.temperature.toFixed(1)}°
-                          {settings.temperatureUnit}
-                          <span className="text-xs ml-1 font-normal text-muted-foreground">
-                            {avgTemp > latestReading.temperature
-                              ? "↓"
-                              : avgTemp < latestReading.temperature
-                              ? "↑"
-                              : "→"}
-                          </span>
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">
-                          Latest Humidity
-                        </p>
-                        <p className="text-xl font-bold flex items-center">
-                          {latestReading.humidity.toFixed(0)}
-                          {settings.humidityUnit}
-                          <span className="text-xs ml-1 font-normal text-muted-foreground">
-                            {avgHumid > latestReading.humidity
-                              ? "↓"
-                              : avgHumid < latestReading.humidity
-                              ? "↑"
-                              : "→"}
-                          </span>
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">
-                          Temperature Range
-                        </p>
-                        <p className="text-sm flex items-center justify-between">
-                          <span>{minTemp.toFixed(1)}°</span>
-                          <span className="text-xs px-2 opacity-50">to</span>
-                          <span>
-                            {maxTemp.toFixed(1)}°{settings.temperatureUnit}
-                          </span>
-                        </p>
-                        <div className="w-full bg-muted h-1.5 rounded-full mt-1 overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-red-500 rounded-full"
-                            style={{
-                              width: "100%",
-                            }}
-                          ></div>
-                          <div
-                            className="h-2.5 w-2.5 bg-background border-2 rounded-full relative -top-2"
-                            style={{
-                              borderColor: color,
-                              marginLeft: `${Math.max(
-                                0,
-                                Math.min(
-                                  100,
-                                  ((latestReading.temperature - minTemp) /
-                                    (maxTemp - minTemp)) *
-                                    100
-                                )
-                              )}%`,
-                              transform: "translateX(-50%)",
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">
-                          Humidity Range
-                        </p>
-                        <p className="text-sm flex items-center justify-between">
-                          <span>{minHumid.toFixed(0)}</span>
-                          <span className="text-xs px-2 opacity-50">to</span>
-                          <span>
-                            {maxHumid.toFixed(0)}
-                            {settings.humidityUnit}
-                          </span>
-                        </p>
-                        <div className="w-full bg-muted h-1.5 rounded-full mt-1 overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-gray-400 to-blue-500 rounded-full"
-                            style={{
-                              width: "100%",
-                            }}
-                          ></div>
-                          <div
-                            className="h-2.5 w-2.5 bg-background border-2 rounded-full relative -top-2"
-                            style={{
-                              borderColor: color,
-                              marginLeft: `${Math.max(
-                                0,
-                                Math.min(
-                                  100,
-                                  ((latestReading.humidity - minHumid) /
-                                    (maxHumid - minHumid)) *
-                                    100
-                                )
-                              )}%`,
-                              transform: "translateX(-50%)",
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            }
-          )}
-        </div>
-      )}
-
-      {/* Full Device Readings Chart */}
-      <div className="mt-6">
-        {roomId && !isComparing && (
-          <DeviceReadingsChart roomId={roomId} initialPeriod="day" />
-        )}
-
-        {isComparing &&
-          Object.keys(comparisonData).length > 0 &&
-          compareMode === "rooms" && (
-            <Card className="bg-card/80 backdrop-blur-sm mt-4">
+          <div key="climate-quality">
+            <Card className="bg-card/80 backdrop-blur-sm h-full">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg font-medium">
-                    Combined Climate Analysis
+                    Climate Quality
                   </CardTitle>
                   <Activity className="h-5 w-5 text-primary" />
                 </div>
                 <CardDescription>
-                  Comparative analysis of selected rooms
+                  Current room climate assessment
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {selectedItems.map((itemId) => {
-                    const roomInfo = allRooms.find((r) => r.id === itemId);
-                    const roomData = comparisonData[itemId];
+              <CardContent className="h-[calc(100%-98px)]">
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <div className="text-7xl mb-2">{comfortData.emoji}</div>
+                  <h3
+                    className={`text-2xl font-bold ${comfortData.color} mb-1`}
+                  >
+                    {comfortData.message}
+                  </h3>
 
-                    if (!roomInfo || !roomData || !roomData.data.length)
-                      return null;
+                  {/* Current Temperature and Humidity */}
+                  <div className="flex justify-center gap-6 mb-2 text-sm">
+                    <div className="flex items-center">
+                      <Thermometer className="h-4 w-4 mr-1 text-rose-400" />
+                      <span>
+                        {dailyTrendData.length > 0
+                          ? `${dailyTrendData[
+                              dailyTrendData.length - 1
+                            ].temperature.toFixed(1)}°${
+                              settings.temperatureUnit
+                            }`
+                          : `--°${settings.temperatureUnit}`}
+                      </span>
+                    </div>
+                    <div className="flex items-center">
+                      <Droplet className="h-4 w-4 mr-1 text-blue-400" />
+                      <span>
+                        {dailyTrendData.length > 0
+                          ? `${dailyTrendData[
+                              dailyTrendData.length - 1
+                            ].humidity.toFixed(0)}${settings.humidityUnit}`
+                          : `--${settings.humidityUnit}`}
+                      </span>
+                    </div>
+                  </div>
 
-                    // Get latest readings
-                    const latestData = roomData.data[roomData.data.length - 1];
+                  <p className="text-sm text-muted-foreground max-w-xs mb-2">
+                    {comfortData.status === "excellent" &&
+                      "Perfect temperature and humidity for this room type!"}
+                    {comfortData.status === "good" &&
+                      "Very comfortable climate conditions for this room."}
+                    {comfortData.status === "moderate" &&
+                      "Climate is acceptable but could be improved."}
+                    {comfortData.status === "poor" &&
+                      "Climate conditions need adjustment for comfort."}
+                    {comfortData.status === "bad" &&
+                      "Climate conditions are uncomfortable and need immediate attention."}
+                  </p>
 
-                    // Calculate climate quality for this room
-                    const climateQuality = assessBasicClimate(
-                      latestData.temperature,
-                      latestData.humidity
-                    );
-
-                    return (
-                      <Card key={itemId} className="bg-background/50">
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-md font-medium">
-                            {roomInfo.name}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="text-3xl">
-                              {climateQuality.emoji}
-                            </div>
-                            <div
-                              className={`text-sm font-medium ${climateQuality.color}`}
-                            >
-                              {climateQuality.message}
-                            </div>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {latestData.temperature.toFixed(1)}°
-                            {settings.temperatureUnit} /
-                            {latestData.humidity.toFixed(0)}
-                            {settings.humidityUnit}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                  {comfortData.details && (
+                    <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t border-border pt-2 mt-1 w-full">
+                      <div className="flex justify-between">
+                        <span>Ideal temperature:</span>
+                        <span className="font-medium">
+                          {comfortData.details.idealTempRange?.[0]}-
+                          {comfortData.details.idealTempRange?.[1]}°
+                          {settings.temperatureUnit}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Room type:</span>
+                        <span className="font-medium capitalize">
+                          {roomData?.type?.replace("_", " ") || "Unknown"}
+                        </span>
+                      </div>
+                      {roomData?.size && roomData?.capacity && (
+                        <div className="flex justify-between">
+                          <span>Space per person:</span>
+                          <span className="font-medium">
+                            {(roomData.size / roomData.capacity).toFixed(1)} m²
+                          </span>
+                        </div>
+                      )}
+                      {comfortData.details.requiredAirflow && (
+                        <div className="flex justify-between">
+                          <span>Required airflow:</span>
+                          <span className="font-medium">
+                            {comfortData.details.requiredAirflow} CFM
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
-          )}
-      </div>
+          </div>
+
+          <div key="device-readings">
+            <Card className="bg-card/80 backdrop-blur-sm h-full">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg font-medium">
+                    Device Readings
+                  </CardTitle>
+                  <Thermometer className="h-5 w-5 text-primary" />
+                </div>
+                <CardDescription>
+                  Detailed device readings over time
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="h-[calc(100%-98px)]">
+                {roomId ? (
+                  <DeviceReadingsChart roomId={roomId} initialPeriod="day" />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted-foreground">
+                    <p>Select a room to view device readings</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </ResponsiveGridLayout>
+      )}
 
       {isComparing && Object.keys(comparisonData).length > 0 && (
         <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">

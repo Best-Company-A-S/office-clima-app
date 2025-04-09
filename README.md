@@ -222,11 +222,22 @@ erDiagram
         string deviceId FK
     }
 
+    DashboardLayout {
+        string id PK
+        string teamId FK
+        json layout
+        boolean isDefault
+        string name
+        datetime createdAt
+        datetime updatedAt
+    }
+
     User ||--o{ Account : "has"
     User ||--o{ Session : "has"
     User ||--o{ TeamMember : "has"
     Team ||--o{ TeamMember : "has"
     Team ||--o{ Room : "has"
+    Team ||--o{ DashboardLayout : "has"
     Room ||--o{ Device : "has"
     Device ||--o{ DeviceReading : "generates"
 ```
@@ -385,6 +396,16 @@ sequenceDiagram
 <div align="center">
   <img src="docs/images/dashboard-overview.png" alt="Dashboard Overview" width="80%">
 </div>
+
+### Customizable Dashboard Layout
+
+The dashboard provides a fully customizable layout system allowing users to:
+
+- **Resize Dashboard Cards**: Adjust the size of monitoring and visualization components
+- **Drag & Drop Interface**: Intuitively arrange cards in the preferred order
+- **Multiple Layouts**: Create and save multiple dashboard layouts for different purposes
+- **Team-Specific Layouts**: Each team can have their own personalized dashboard configuration
+- **Layout Persistence**: Dashboard arrangements are automatically saved to the database
 
 ### Interactive Climate Visualization
 
