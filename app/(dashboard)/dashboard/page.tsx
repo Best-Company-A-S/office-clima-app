@@ -25,6 +25,9 @@ import {
   Save,
   Layout,
   Edit,
+  Eye,
+  Trash2,
+  Star,
 } from "lucide-react";
 import axios from "axios";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -89,6 +92,26 @@ import { Input } from "@/components/ui/input";
 import { Responsive, WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
@@ -1330,6 +1353,110 @@ const Dashboard = () => {
     loadDashboardLayouts();
   }, [loadDashboardLayouts]);
 
+  // Add new states for layout management
+  const [isLayoutSettingsOpen, setIsLayoutSettingsOpen] = useState(false);
+  const [layoutToRename, setLayoutToRename] = useState<DashboardLayout | null>(
+    null
+  );
+  const [newLayoutNameInput, setNewLayoutNameInput] = useState("");
+  const [layoutToDelete, setLayoutToDelete] = useState<DashboardLayout | null>(
+    null
+  );
+  const [layoutToPreview, setLayoutToPreview] =
+    useState<DashboardLayout | null>(null);
+  const [isRenamingLayout, setIsRenamingLayout] = useState(false);
+  const [isDeletingLayout, setIsDeletingLayout] = useState(false);
+
+  // Add a new function to handle layout renaming
+  const handleRenameLayout = async () => {
+    if (!layoutToRename || !newLayoutNameInput.trim()) return;
+
+    try {
+      setIsRenamingLayout(true);
+      const teamId = searchParams.get("teamId");
+      if (!teamId) return;
+
+      const response = await axios.put(
+        `/api/teams/${teamId}/layouts/${layoutToRename.id}`,
+        {
+          name: newLayoutNameInput.trim(),
+        }
+      );
+
+      if (response.data) {
+        // Update the layout in the list
+        setAvailableLayouts((prev) =>
+          prev.map((layout) =>
+            layout.id === layoutToRename.id
+              ? { ...layout, name: newLayoutNameInput.trim() }
+              : layout
+          )
+        );
+
+        // Update current layout if it's the one being renamed
+        if (currentLayout?.id === layoutToRename.id) {
+          setCurrentLayout({
+            ...currentLayout,
+            name: newLayoutNameInput.trim(),
+          });
+        }
+
+        // Reset states
+        setLayoutToRename(null);
+        setNewLayoutNameInput("");
+      }
+    } catch (error) {
+      console.error("Failed to rename layout:", error);
+    } finally {
+      setIsRenamingLayout(false);
+    }
+  };
+
+  // Add a function to handle layout deletion
+  const handleDeleteLayout = async () => {
+    if (!layoutToDelete) return;
+
+    try {
+      setIsDeletingLayout(true);
+      const teamId = searchParams.get("teamId");
+      if (!teamId) return;
+
+      await axios.delete(`/api/teams/${teamId}/layouts/${layoutToDelete.id}`);
+
+      // Remove the layout from the list
+      setAvailableLayouts((prev) =>
+        prev.filter((layout) => layout.id !== layoutToDelete.id)
+      );
+
+      // If the deleted layout was the current one, switch to another layout
+      if (currentLayout?.id === layoutToDelete.id) {
+        const newCurrentLayout = availableLayouts.find(
+          (layout) => layout.id !== layoutToDelete.id
+        );
+        if (newCurrentLayout) {
+          setCurrentLayout(newCurrentLayout);
+        } else {
+          setCurrentLayout(defaultLayout);
+        }
+      }
+
+      // Reset state
+      setLayoutToDelete(null);
+    } catch (error) {
+      console.error("Failed to delete layout:", error);
+    } finally {
+      setIsDeletingLayout(false);
+    }
+  };
+
+  // Function to apply a layout preview as the current layout
+  const applyPreviewedLayout = () => {
+    if (layoutToPreview) {
+      setCurrentLayout(layoutToPreview);
+      setLayoutToPreview(null);
+    }
+  };
+
   if (isLoading || isLoadingLayouts) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[70vh]">
@@ -1389,6 +1516,17 @@ const Dashboard = () => {
                 </>
               ) : (
                 <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => setIsLayoutSettingsOpen(true)}
+                  >
+                    <Settings className="h-4 w-4 mr-1" />
+                    <span className="sr-only md:not-sr-only">
+                      Layout Settings
+                    </span>
+                  </Button>
                   {availableLayouts.length > 1 && (
                     <Popover>
                       <PopoverTrigger asChild>
@@ -1476,14 +1614,14 @@ const Dashboard = () => {
                           <div
                             key={room.id}
                             className={`
-                              flex items-center justify-between p-3 rounded-md transition-colors
-                              ${
-                                selectedItems.includes(room.id)
-                                  ? "bg-primary/10 border-primary/30"
-                                  : "hover:bg-muted"
-                              }
-                              border cursor-pointer
-                            `}
+                            flex items-center justify-between p-3 rounded-md transition-colors
+                            ${
+                              selectedItems.includes(room.id)
+                                ? "bg-primary/10 border-primary/30"
+                                : "hover:bg-muted"
+                            }
+                            border cursor-pointer
+                          `}
                             onClick={() => {
                               setSelectedItems((prev) =>
                                 prev.includes(room.id)
@@ -1805,6 +1943,375 @@ const Dashboard = () => {
         </div>
       )}
 
+      {isComparing && Object.keys(comparisonData).length > 0 && (
+        <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">
+          <details>
+            <summary className="cursor-pointer hover:text-foreground">
+              Debug information
+            </summary>
+            <div className="mt-1 space-y-1">
+              <div>Cache entries: {getComparisonDebugInfo().cacheEntries}</div>
+              <div>Throttle: {getComparisonDebugInfo().throttleStatus}</div>
+              <div>
+                Requests in progress:{" "}
+                {getComparisonDebugInfo().requestsInProgress}
+              </div>
+              <div className="mt-2">
+                {getComparisonDebugInfo().cacheInfo.map((info) => (
+                  <div key={info.roomName} className="flex justify-between">
+                    <span>{info.roomName}</span>
+                    <span
+                      className={
+                        info.isValid ? "text-green-500" : "text-yellow-500"
+                      }
+                    >
+                      {info.dataPoints} points, {info.age}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+        </div>
+      )}
+
+      {/* Layout Settings Sheet */}
+      <Sheet open={isLayoutSettingsOpen} onOpenChange={setIsLayoutSettingsOpen}>
+        <SheetContent className="sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Dashboard Layouts</SheetTitle>
+            <SheetDescription>
+              Manage your custom dashboard layouts
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="p-6 space-y-6">
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium mb-1">Available Layouts</h3>
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                {availableLayouts.map((layout) => (
+                  <div
+                    key={layout.id}
+                    className={`
+                      border rounded-md p-3 transition-colors
+                      ${
+                        layout.id === currentLayout?.id
+                          ? "bg-primary/10 border-primary/30"
+                          : "hover:bg-muted"
+                      }
+                    `}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {layout.isDefault && (
+                          <Badge variant="outline" className="text-xs">
+                            Default
+                          </Badge>
+                        )}
+                        <span className="font-medium truncate max-w-[180px]">
+                          {layout.name}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <TooltipProvider>
+                          <UITooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setLayoutToPreview(layout);
+                                }}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Preview</TooltipContent>
+                          </UITooltip>
+                        </TooltipProvider>
+
+                        <TooltipProvider>
+                          <UITooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setLayoutToRename(layout);
+                                  setNewLayoutNameInput(layout.name);
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Rename</TooltipContent>
+                          </UITooltip>
+                        </TooltipProvider>
+
+                        {!layout.isDefault && (
+                          <TooltipProvider>
+                            <UITooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive/70 hover:text-destructive"
+                                  onClick={() => setLayoutToDelete(layout)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Delete</TooltipContent>
+                            </UITooltip>
+                          </TooltipProvider>
+                        )}
+
+                        {!layout.isDefault && (
+                          <TooltipProvider>
+                            <UITooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={async () => {
+                                    const teamId = searchParams.get("teamId");
+                                    if (!teamId) return;
+                                    try {
+                                      await axios.put(
+                                        `/api/teams/${teamId}/layouts/default/${layout.id}`
+                                      );
+
+                                      // Update layouts in state
+                                      setAvailableLayouts((prev) =>
+                                        prev.map((l) => ({
+                                          ...l,
+                                          isDefault: l.id === layout.id,
+                                        }))
+                                      );
+                                    } catch (error) {
+                                      console.error(
+                                        "Failed to set default layout:",
+                                        error
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <Star className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Set as default</TooltipContent>
+                            </UITooltip>
+                          </TooltipProvider>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="w-full h-24 bg-muted/50 rounded-md overflow-hidden relative border border-border/50">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="grid grid-cols-12 gap-1 w-full h-full p-2">
+                          {/* Simple visual representation of the layout */}
+                          {layout.layout?.lg?.map((item) => (
+                            <div
+                              key={item.i}
+                              className="bg-primary/20 rounded-sm border border-primary/30"
+                              style={{
+                                gridColumn: `span ${item.w} / span ${item.w}`,
+                                gridRow: `span ${Math.min(
+                                  item.h,
+                                  4
+                                )} / span ${Math.min(item.h, 4)}`,
+                              }}
+                            ></div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {layout.id === currentLayout?.id ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2"
+                        disabled
+                      >
+                        <CheckIcon className="h-4 w-4 mr-2" />
+                        Current Layout
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2"
+                        onClick={() => {
+                          setCurrentLayout(layout);
+                          setIsLayoutSettingsOpen(false);
+                        }}
+                      >
+                        Apply Layout
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <Button
+                variant="default"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  // Create a new layout object based on the default but with a unique ID
+                  const newLayout = {
+                    ...defaultLayout,
+                    id: "new-" + Date.now(), // Temporary ID until saved
+                    name: "New Layout",
+                  };
+                  // Set the new layout as current
+                  setCurrentLayout(newLayout);
+                  // Reset layout name input
+                  setNewLayoutName("New Layout");
+                  // Close the settings sheet
+                  setIsLayoutSettingsOpen(false);
+                  // Enable edit mode
+                  setEditLayoutMode(true);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create New Layout
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Layout Preview Dialog */}
+      <Dialog
+        open={layoutToPreview !== null}
+        onOpenChange={(open) => !open && setLayoutToPreview(null)}
+      >
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Preview: {layoutToPreview?.name}</DialogTitle>
+            <DialogDescription>
+              Preview this layout before applying it to your dashboard
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="w-full bg-muted/20 rounded-md overflow-hidden h-[300px] relative border">
+            <div className="grid grid-cols-12 gap-1 w-full h-full p-2">
+              {layoutToPreview?.layout?.lg?.map((item) => (
+                <div
+                  key={item.i}
+                  className="bg-primary/10 rounded border border-primary/20 flex items-center justify-center text-xs"
+                  style={{
+                    gridColumn: `span ${item.w} / span ${item.w}`,
+                    gridRow: `span ${Math.min(item.h, 6)} / span ${Math.min(
+                      item.h,
+                      6
+                    )}`,
+                  }}
+                >
+                  {item.i === "temperature-trend" && (
+                    <Thermometer className="h-5 w-5 mr-1 text-primary/70" />
+                  )}
+                  {item.i === "climate-quality" && (
+                    <Activity className="h-5 w-5 mr-1 text-primary/70" />
+                  )}
+                  {item.i === "device-readings" && (
+                    <BarChart className="h-5 w-5 mr-1 text-primary/70" />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLayoutToPreview(null)}>
+              Cancel
+            </Button>
+            <Button onClick={applyPreviewedLayout}>Apply Layout</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename Layout Dialog */}
+      <Dialog
+        open={layoutToRename !== null}
+        onOpenChange={(open) => !open && setLayoutToRename(null)}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Rename Layout</DialogTitle>
+            <DialogDescription>
+              Enter a new name for the layout
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <Label htmlFor="layout-name" className="text-sm">
+              Layout Name
+            </Label>
+            <Input
+              id="layout-name"
+              value={newLayoutNameInput}
+              onChange={(e) => setNewLayoutNameInput(e.target.value)}
+              placeholder="Enter layout name"
+              className="mt-1"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLayoutToRename(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRenameLayout}
+              disabled={isRenamingLayout || !newLayoutNameInput.trim()}
+            >
+              {isRenamingLayout ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Layout Confirmation */}
+      <AlertDialog
+        open={layoutToDelete !== null}
+        onOpenChange={(open) => !open && setLayoutToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Layout</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the layout &quot;
+              {layoutToDelete?.name}&quot;? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setLayoutToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteLayout}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={isDeletingLayout}
+            >
+              {isDeletingLayout ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {!isComparing && currentLayout && (
         <ResponsiveGridLayout
           className="layout"
@@ -2065,38 +2572,6 @@ const Dashboard = () => {
             </Card>
           </div>
         </ResponsiveGridLayout>
-      )}
-
-      {isComparing && Object.keys(comparisonData).length > 0 && (
-        <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">
-          <details>
-            <summary className="cursor-pointer hover:text-foreground">
-              Debug information
-            </summary>
-            <div className="mt-1 space-y-1">
-              <div>Cache entries: {getComparisonDebugInfo().cacheEntries}</div>
-              <div>Throttle: {getComparisonDebugInfo().throttleStatus}</div>
-              <div>
-                Requests in progress:{" "}
-                {getComparisonDebugInfo().requestsInProgress}
-              </div>
-              <div className="mt-2">
-                {getComparisonDebugInfo().cacheInfo.map((info) => (
-                  <div key={info.roomName} className="flex justify-between">
-                    <span>{info.roomName}</span>
-                    <span
-                      className={
-                        info.isValid ? "text-green-500" : "text-yellow-500"
-                      }
-                    >
-                      {info.dataPoints} points, {info.age}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </details>
-        </div>
       )}
     </div>
   );
