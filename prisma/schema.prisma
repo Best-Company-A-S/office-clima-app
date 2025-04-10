@@ -72,6 +72,9 @@ model Device {
   isPaired Boolean @default(false)
   lastSeenAt DateTime?
   lastUpdatedAt DateTime?
+  batteryVoltage Float?
+  batteryPercentage Int?
+  batteryTimeRemaining Int?
   autoUpdate Boolean @default(false) // Whether to auto-update from GitHub releases
   roomId String?
   room Room? @relation(fields: [roomId], references: [id])

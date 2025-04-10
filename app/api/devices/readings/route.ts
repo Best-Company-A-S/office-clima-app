@@ -39,12 +39,29 @@ export async function POST(request: Request) {
     } = validation.data;
 
     // Check if device exists
-    const device = await prisma.device.findUnique({
+    let device = await prisma.device.findUnique({
       where: { device_id: deviceId },
     });
 
+    // Auto-register the device if it doesn't exist
     if (!device) {
-      return NextResponse.json({ error: "Device not found" }, { status: 404 });
+      console.log(`Auto-registering new device: ${deviceId}`);
+      try {
+        device = await prisma.device.create({
+          data: {
+            device_id: deviceId,
+            firmwareStatus: "UP_TO_DATE",
+            lastSeenAt: new Date(),
+          },
+        });
+        console.log(`Successfully registered device: ${deviceId}`);
+      } catch (error) {
+        console.error(`Failed to auto-register device: ${deviceId}`, error);
+        return NextResponse.json(
+          { error: `Failed to register device: ${deviceId}` },
+          { status: 500 }
+        );
+      }
     }
 
     // Create the reading
@@ -58,10 +75,15 @@ export async function POST(request: Request) {
       RETURNING *
     `;
 
-    // Update the device lastSeenAt time
+    // Update the device lastSeenAt time and battery info
     await prisma.device.update({
       where: { device_id: deviceId },
-      data: { lastSeenAt: new Date() },
+      data: {
+        lastSeenAt: new Date(),
+        ...(batteryVoltage && { batteryVoltage }),
+        ...(batteryPercentage && { batteryPercentage }),
+        ...(batteryTimeRemaining && { batteryTimeRemaining }),
+      },
     });
 
     return NextResponse.json({ success: true }, { status: 201 });

@@ -6,7 +6,13 @@ import * as Sentry from "@sentry/nextjs";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { deviceId, firmwareVersion, modelType } = body;
+    const {
+      deviceId,
+      firmwareVersion,
+      modelType,
+      batteryVoltage,
+      batteryPercentage,
+    } = body;
 
     console.log("device_id", deviceId);
     console.log("firmwareVersion", firmwareVersion);
@@ -29,6 +35,8 @@ export async function POST(request: Request) {
           model: modelType,
           lastSeenAt: new Date(),
           firmwareStatus: "UP_TO_DATE",
+          ...(batteryVoltage && { batteryVoltage }),
+          ...(batteryPercentage && { batteryPercentage }),
         },
       });
       return NextResponse.json(updatedDevice);
@@ -40,6 +48,8 @@ export async function POST(request: Request) {
         firmwareVersion,
         model: modelType,
         firmwareStatus: "UP_TO_DATE",
+        ...(batteryVoltage && { batteryVoltage }),
+        ...(batteryPercentage && { batteryPercentage }),
       },
     });
 
