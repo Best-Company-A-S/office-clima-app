@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
@@ -6,25 +7,19 @@ export async function GET(
   { params }: { params: { deviceId: string } }
 ) {
   try {
-    const { deviceId } = params;
-
-    if (!deviceId) {
-      return NextResponse.json(
-        { error: "Device ID is required" },
-        { status: 400 }
-      );
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Find the device with room details
+    const deviceId = params.deviceId;
+
     const device = await prisma.device.findUnique({
-      where: { device_id: deviceId },
+      where: {
+        device_id: deviceId,
+      },
       include: {
-        room: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
+        room: true,
       },
     });
 
@@ -32,17 +27,17 @@ export async function GET(
       return NextResponse.json({ error: "Device not found" }, { status: 404 });
     }
 
-    // Format the response with room name
-    const response = {
+    // Add room name to response if available
+    const deviceWithRoomName = {
       ...device,
       roomName: device.room?.name || null,
     };
 
-    return NextResponse.json(response);
+    return NextResponse.json(deviceWithRoomName);
   } catch (error) {
     console.error("Error fetching device:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Failed to fetch device" },
       { status: 500 }
     );
   }
@@ -53,66 +48,94 @@ export async function PATCH(
   { params }: { params: { deviceId: string } }
 ) {
   try {
-    const { deviceId } = params;
-    const body = await request.json();
-
-    // Validate request
-    if (!deviceId) {
-      return NextResponse.json(
-        { error: "Device ID is required" },
-        { status: 400 }
-      );
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if device exists
+    const deviceId = params.deviceId;
+    const data = await request.json();
+
     const device = await prisma.device.findUnique({
-      where: { device_id: deviceId },
+      where: {
+        device_id: deviceId,
+      },
     });
 
     if (!device) {
       return NextResponse.json({ error: "Device not found" }, { status: 404 });
     }
 
-    // Fields that are allowed to be updated
-    const allowedFields: Record<string, any> = {
-      name: body.name,
-      description: body.description,
-      autoUpdate: body.autoUpdate,
-      roomId: body.roomId,
-    };
-
-    // Remove undefined fields
-    Object.keys(allowedFields).forEach((key) => {
-      if (allowedFields[key] === undefined) {
-        delete allowedFields[key];
-      }
-    });
-
-    // Update device
+    // Update the device
     const updatedDevice = await prisma.device.update({
-      where: { device_id: deviceId },
-      data: allowedFields,
-      include: {
-        room: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
+      where: {
+        device_id: deviceId,
       },
+      data,
     });
 
-    // Format the response
-    const response = {
-      ...updatedDevice,
-      roomName: updatedDevice.room?.name || null,
-    };
-
-    return NextResponse.json(response);
+    return NextResponse.json(updatedDevice);
   } catch (error) {
     console.error("Error updating device:", error);
     return NextResponse.json(
       { error: "Failed to update device" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { deviceId: string } }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const deviceId = params.deviceId;
+
+    // Check if device exists
+    const device = await prisma.device.findUnique({
+      where: {
+        device_id: deviceId,
+      },
+    });
+
+    if (!device) {
+      return NextResponse.json({ error: "Device not found" }, { status: 404 });
+    }
+
+    // Delete device readings first (cascade should handle this, but being explicit)
+    await prisma.deviceReading.deleteMany({
+      where: {
+        deviceId: deviceId,
+      },
+    });
+
+    // Delete any firmware downloads associated with this device
+    await prisma.firmwareDownload.deleteMany({
+      where: {
+        deviceId: deviceId,
+      },
+    });
+
+    // Finally delete the device
+    await prisma.device.delete({
+      where: {
+        device_id: deviceId,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "Device deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting device:", error);
+    return NextResponse.json(
+      { error: "Failed to delete device" },
       { status: 500 }
     );
   }
