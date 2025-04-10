@@ -1,25 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: NextRequest) {
   try {
-    // Get all firmware entries, or filter by modelType if provided
-    const { searchParams } = new URL(request.url);
-    const modelType = searchParams.get("modelType");
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
+    // Fetch all firmware, ordered by createdAt descending (newest first)
     const firmwares = await prisma.firmware.findMany({
-      where: modelType ? { modelType } : undefined,
-      orderBy: [
-        { status: "asc" }, // RELEASED comes before DRAFT
-        { createdAt: "desc" }, // Newest first
-      ],
+      orderBy: {
+        createdAt: "desc",
+      },
     });
 
     return NextResponse.json(firmwares);
   } catch (error) {
     console.error("Error fetching firmware:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Failed to fetch firmware" },
       { status: 500 }
     );
   }

@@ -32,6 +32,8 @@ import {
   Laptop,
   Terminal,
   GitBranch,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -108,6 +110,12 @@ export default function UpdatesPage() {
     modelType: "Arduino_UNO_R4_WiFi",
     releaseNotes: "",
   });
+  const [isDeletingFirmware, setIsDeletingFirmware] = useState<string | null>(
+    null
+  );
+  const [firmwareToDelete, setFirmwareToDelete] = useState<Firmware | null>(
+    null
+  );
 
   // Fetch devices and firmware
   useEffect(() => {
@@ -401,6 +409,26 @@ export default function UpdatesPage() {
     }
   };
 
+  // Delete firmware version
+  const deleteFirmware = async (firmwareId: string) => {
+    setIsDeletingFirmware(firmwareId);
+    try {
+      await axios.delete(`/api/firmware/${firmwareId}`);
+
+      // Update state
+      setFirmwares(firmwares.filter((firmware) => firmware.id !== firmwareId));
+      toast.success("Firmware version deleted successfully");
+
+      // Close confirmation dialog
+      setFirmwareToDelete(null);
+    } catch (error) {
+      console.error("Error deleting firmware:", error);
+      toast.error("Failed to delete firmware version");
+    } finally {
+      setIsDeletingFirmware(null);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[70vh]">
@@ -591,6 +619,7 @@ export default function UpdatesPage() {
                   <TableHead>Size</TableHead>
                   <TableHead>Released</TableHead>
                   <TableHead>Notes</TableHead>
+                  <TableHead className="w-16 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -622,6 +651,29 @@ export default function UpdatesPage() {
                         </Tooltip>
                       </TooltipProvider>
                     </TableCell>
+                    <TableCell className="text-right">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setFirmwareToDelete(firmware)}
+                              disabled={isDeletingFirmware === firmware.id}
+                            >
+                              {isDeletingFirmware === firmware.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-red-500" />
+                              ) : (
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Delete firmware</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -629,6 +681,45 @@ export default function UpdatesPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Firmware Confirmation Dialog */}
+      <AlertDialog
+        open={firmwareToDelete !== null}
+        onOpenChange={(open) => !open && setFirmwareToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Delete Firmware Version
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete firmware version{" "}
+              <strong>{firmwareToDelete?.version}</strong> for{" "}
+              <strong>{firmwareToDelete?.modelType}</strong>?
+              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-sm">
+                This action cannot be undone. Devices that are currently using
+                this firmware version will not be affected, but you will no
+                longer be able to deploy this version to devices.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                firmwareToDelete && deleteFirmware(firmwareToDelete.id)
+              }
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isDeletingFirmware ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Devices */}
       <Card>
