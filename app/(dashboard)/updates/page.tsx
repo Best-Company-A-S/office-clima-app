@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import {
   RefreshCw,
   Download,
-  Upload,
   Loader2,
   Clock,
   CheckCircle2,
@@ -99,23 +98,17 @@ export default function UpdatesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [firmwares, setFirmwares] = useState<Firmware[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [showUploadForm, setShowUploadForm] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [firmwareFile, setFirmwareFile] = useState<File | null>(null);
-  const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [uploadFormData, setUploadFormData] = useState({
-    version: "",
-    modelType: "Arduino_UNO_R4_WiFi",
-    releaseNotes: "",
-  });
+  const [isDownloading, setIsDownloading] = useState(false);
   const [isDeletingFirmware, setIsDeletingFirmware] = useState<string | null>(
     null
   );
   const [firmwareToDelete, setFirmwareToDelete] = useState<Firmware | null>(
     null
   );
+  const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [selectedFirmware, setSelectedFirmware] = useState<string | null>(null);
+  const [showDeployConfirmation, setShowDeployConfirmation] = useState(false);
 
   // Fetch devices and firmware
   useEffect(() => {
@@ -169,27 +162,27 @@ export default function UpdatesPage() {
     }
   };
 
-  // Sync with GitHub
-  const syncWithGitHub = async () => {
-    setIsSyncing(true);
+  // Renamed from syncWithGitHub to downloadFromGitHub
+  const downloadFromGitHub = async () => {
+    setIsDownloading(true);
     try {
       const response = await axios.post("/api/firmware/sync-github");
       toast.success(
-        response.data.message || "Synchronized firmware with GitHub releases"
+        response.data.message || "Downloaded firmware from GitHub releases"
       );
 
       // Refresh firmware list
       const firmwareResponse = await axios.get("/api/firmware");
       setFirmwares(firmwareResponse.data);
     } catch (error: any) {
-      console.error("Error syncing with GitHub:", error);
+      console.error("Error downloading from GitHub:", error);
 
       // Handle repository not found error specifically
       if (error.response?.status === 404) {
         toast.error(
           <div>
             <p className="font-medium">
-              {error.response.data.message || "Failed to sync with GitHub"}
+              {error.response.data.message || "Failed to download from GitHub"}
             </p>
             <p className="text-sm mt-1">
               Check that your GitHub token has proper permissions.
@@ -199,77 +192,11 @@ export default function UpdatesPage() {
         );
       } else {
         toast.error(
-          error.response?.data?.error || "Failed to sync with GitHub releases"
+          error.response?.data?.error || "Failed to download from GitHub"
         );
       }
     } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Handle firmware file upload
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFirmwareFile(e.target.files[0]);
-    }
-  };
-
-  // Handle form input changes
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setUploadFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  // Handle model type selection
-  const handleModelChange = (value: string) => {
-    setUploadFormData((prev) => ({ ...prev, modelType: value }));
-  };
-
-  // Handle firmware upload
-  const uploadFirmware = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firmwareFile) {
-      toast.error("Please select a firmware file to upload");
-      return;
-    }
-
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append("file", firmwareFile);
-    formData.append("version", uploadFormData.version);
-    formData.append("modelType", uploadFormData.modelType);
-    formData.append("releaseNotes", uploadFormData.releaseNotes);
-
-    try {
-      const response = await axios.post("/api/firmware/upload", formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
-
-      toast.success(
-        `Firmware version ${uploadFormData.version} uploaded successfully`
-      );
-
-      // Reset form
-      setFirmwareFile(null);
-      setUploadFormData({
-        version: "",
-        modelType: "Arduino_UNO_R4_WiFi",
-        releaseNotes: "",
-      });
-      setShowUploadForm(false);
-
-      // Refresh firmware list
-      const firmwareResponse = await axios.get("/api/firmware");
-      setFirmwares(firmwareResponse.data);
-    } catch (error: any) {
-      console.error("Error uploading firmware:", error);
-      toast.error(error.response?.data?.error || "Failed to upload firmware");
-    } finally {
-      setIsUploading(false);
+      setIsDownloading(false);
     }
   };
 
@@ -316,36 +243,45 @@ export default function UpdatesPage() {
     }
   };
 
-  // Force update selected devices
-  const forceUpdateDevices = async () => {
+  // Deploy firmware to selected devices
+  const deployToSelectedDevices = async () => {
     if (selectedDevices.length === 0) {
-      toast.error("Please select at least one device to update");
+      toast.error("Please select at least one device to deploy firmware to");
       return;
     }
 
-    setIsUpdating(true);
+    if (!selectedFirmware) {
+      toast.error("Please select a firmware version to deploy");
+      return;
+    }
+
+    setIsDeploying(true);
     try {
-      // Update each selected device
+      // Update each selected device with the selected firmware
       await Promise.all(
         selectedDevices.map((deviceId) =>
-          axios.post(`/api/devices/${deviceId}/forceUpdate`)
+          axios.post(`/api/devices/${deviceId}/deployFirmware`, {
+            firmwareId: selectedFirmware,
+          })
         )
       );
 
       toast.success(
-        `${selectedDevices.length} devices will update on their next check-in`
+        `Firmware will be deployed to ${selectedDevices.length} devices on their next check-in`
       );
 
       // Reset selection
       setSelectedDevices([]);
+      setSelectedFirmware(null);
+      setShowDeployConfirmation(false);
 
       // Refresh data after a short delay
       setTimeout(() => refreshData(), 1000);
     } catch (error) {
-      console.error("Error forcing updates:", error);
-      toast.error("Failed to initiate device updates");
+      console.error("Error deploying firmware:", error);
+      toast.error("Failed to deploy firmware to devices");
     } finally {
-      setIsUpdating(false);
+      setIsDeploying(false);
     }
   };
 
@@ -471,127 +407,37 @@ export default function UpdatesPage() {
             </Tooltip>
           </TooltipProvider>
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={syncWithGitHub}
-                  disabled={isSyncing}
-                >
-                  <GitBranch
-                    className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`}
-                  />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Sync with GitHub</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
           <Button
             variant="outline"
-            onClick={() => setShowUploadForm(!showUploadForm)}
+            onClick={downloadFromGitHub}
+            disabled={isDownloading}
           >
-            <Upload className="h-4 w-4 mr-2" />
-            <span>Upload Firmware</span>
+            <GitBranch
+              className={`h-4 w-4 mr-2 ${isDownloading ? "animate-spin" : ""}`}
+            />
+            <span>Download from GitHub</span>
           </Button>
 
           <Button
-            onClick={forceUpdateDevices}
-            disabled={selectedDevices.length === 0 || isUpdating}
+            onClick={() => {
+              if (selectedFirmware && selectedDevices.length > 0) {
+                setShowDeployConfirmation(true);
+              } else if (!selectedFirmware) {
+                toast.error("Please select a firmware version to deploy");
+              } else {
+                toast.error("Please select at least one device");
+              }
+            }}
+            disabled={
+              selectedDevices.length === 0 || isDeploying || !selectedFirmware
+            }
           >
-            {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            <span>Update Selected ({selectedDevices.length})</span>
+            {isDeploying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Download className="h-4 w-4 mr-2" />
+            <span>Deploy to Selected ({selectedDevices.length})</span>
           </Button>
         </div>
       </div>
-
-      {/* Firmware Upload Form */}
-      {showUploadForm && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Upload New Firmware</CardTitle>
-            <CardDescription>
-              Add a new firmware version to deploy to your devices
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={uploadFirmware} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Version</label>
-                  <Input
-                    name="version"
-                    value={uploadFormData.version}
-                    onChange={handleInputChange}
-                    placeholder="e.g. 1.0.0"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Device Model</label>
-                  <Select
-                    value={uploadFormData.modelType}
-                    onValueChange={handleModelChange}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Arduino_UNO_R4_WiFi">
-                        Arduino UNO R4 WiFi
-                      </SelectItem>
-                      <SelectItem value="ESP32">ESP32</SelectItem>
-                      <SelectItem value="ESP8266">ESP8266</SelectItem>
-                      <SelectItem value="Generic">Generic</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Release Notes</label>
-                <Textarea
-                  name="releaseNotes"
-                  value={uploadFormData.releaseNotes}
-                  onChange={handleInputChange}
-                  placeholder="What changed in this version?"
-                  rows={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Firmware Binary</label>
-                <Input type="file" onChange={handleFileChange} required />
-                <p className="text-xs text-muted-foreground">
-                  Upload a compiled binary file (.bin)
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowUploadForm(false)}
-                  disabled={isUploading}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isUploading}>
-                  {isUploading && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Upload Firmware
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Available Firmware */}
       <Card className="mb-6">
@@ -607,13 +453,16 @@ export default function UpdatesPage() {
               <Terminal className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
               <p className="text-muted-foreground">No firmware available</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Upload firmware or sync with GitHub to get started
+                Download firmware from GitHub to get started
               </p>
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <span className="sr-only">Select</span>
+                  </TableHead>
                   <TableHead>Version</TableHead>
                   <TableHead>Model</TableHead>
                   <TableHead>Size</TableHead>
@@ -625,6 +474,15 @@ export default function UpdatesPage() {
               <TableBody>
                 {firmwares.map((firmware) => (
                   <TableRow key={firmware.id}>
+                    <TableCell>
+                      <input
+                        type="radio"
+                        name="selectedFirmware"
+                        checked={selectedFirmware === firmware.id}
+                        onChange={() => setSelectedFirmware(firmware.id)}
+                        className="h-4 w-4 rounded-full border-gray-300 text-primary focus:ring-primary/80"
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       {firmware.version}
                     </TableCell>
@@ -716,6 +574,64 @@ export default function UpdatesPage() {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Deploy Confirmation Dialog */}
+      <AlertDialog
+        open={showDeployConfirmation}
+        onOpenChange={setShowDeployConfirmation}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deploy Firmware</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to deploy the selected firmware to{" "}
+              {selectedDevices.length} device
+              {selectedDevices.length !== 1 ? "s" : ""}?
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md text-blue-800 text-sm">
+                <p className="font-medium mb-1">Selected firmware:</p>
+                {selectedFirmware &&
+                firmwares.find((f) => f.id === selectedFirmware) ? (
+                  <ul className="list-disc ml-4 space-y-1">
+                    <li>
+                      Version:{" "}
+                      {
+                        firmwares.find((f) => f.id === selectedFirmware)
+                          ?.version
+                      }
+                    </li>
+                    <li>
+                      Model:{" "}
+                      {
+                        firmwares.find((f) => f.id === selectedFirmware)
+                          ?.modelType
+                      }
+                    </li>
+                    <li>
+                      Size:{" "}
+                      {(firmwares.find((f) => f.id === selectedFirmware)
+                        ?.fileSize || 0) / 1024}{" "}
+                      KB
+                    </li>
+                  </ul>
+                ) : (
+                  <p>No firmware selected</p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={deployToSelectedDevices}
+              disabled={isDeploying}
+              className="bg-primary hover:bg-primary/90"
+            >
+              {isDeploying && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Deploy Firmware
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -814,35 +730,6 @@ export default function UpdatesPage() {
           <p className="text-xs text-muted-foreground">
             {devices.length} device{devices.length !== 1 ? "s" : ""} total
           </p>
-
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                className="text-amber-600 border-amber-200 bg-amber-50 hover:bg-amber-100"
-                disabled={selectedDevices.length === 0}
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Force Update Selected
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Confirm Update</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to update {selectedDevices.length}{" "}
-                  device{selectedDevices.length !== 1 ? "s" : ""}? The devices
-                  will update to the latest firmware on their next check-in.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={forceUpdateDevices}>
-                  Continue
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
         </CardFooter>
       </Card>
     </div>
