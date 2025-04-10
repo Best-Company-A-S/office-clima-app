@@ -30,6 +30,7 @@ import {
   AlertCircle,
   RefreshCw,
   Settings,
+  Battery,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -52,6 +53,9 @@ interface Device {
     temperature: number;
     humidity: number;
     airQuality: number;
+    batteryVoltage?: number;
+    batteryPercentage?: number;
+    batteryTimeRemaining?: number;
     timestamp: string;
   };
 }
@@ -360,6 +364,54 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
                             </div>
                           </div>
 
+                          {device.lastReading.batteryVoltage && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="text-muted-foreground flex items-center gap-1">
+                                  <Battery className="h-3.5 w-3.5" />
+                                  Battery
+                                </span>
+                                <span className="font-semibold">
+                                  {device.lastReading.batteryVoltage.toFixed(2)}
+                                  V
+                                  {device.lastReading.batteryPercentage !==
+                                    undefined && (
+                                    <span className="ml-1">
+                                      ({device.lastReading.batteryPercentage}%)
+                                    </span>
+                                  )}
+                                  {device.lastReading.batteryTimeRemaining !==
+                                    undefined && (
+                                    <span className="ml-1 text-xs text-muted-foreground">
+                                      {Math.floor(
+                                        device.lastReading
+                                          .batteryTimeRemaining / 60
+                                      )}
+                                      h{" "}
+                                      {device.lastReading.batteryTimeRemaining %
+                                        60}
+                                      m left
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                              <Progress
+                                value={
+                                  device.lastReading.batteryPercentage !==
+                                  undefined
+                                    ? device.lastReading.batteryPercentage
+                                    : Math.min(
+                                        100,
+                                        (device.lastReading.batteryVoltage /
+                                          3.3) *
+                                          100
+                                      )
+                                }
+                                className="h-1.5 bg-slate-200"
+                              />
+                            </div>
+                          )}
+
                           <div className="space-y-2">
                             <div className="flex items-center justify-between text-sm">
                               <span className="text-muted-foreground flex items-center gap-1">
@@ -452,6 +504,9 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
                           Humidity
                         </th>
                         <th className="text-center px-4 py-3 font-medium text-muted-foreground text-sm">
+                          Battery
+                        </th>
+                        <th className="text-center px-4 py-3 font-medium text-muted-foreground text-sm">
                           Air Quality
                         </th>
                         <th className="text-right px-4 py-3 font-medium text-muted-foreground text-sm">
@@ -498,6 +553,29 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
                             <td className="px-4 py-3 text-center font-medium">
                               {device.lastReading
                                 ? `${device.lastReading.humidity.toFixed(1)}%`
+                                : "N/A"}
+                            </td>
+                            <td className="px-4 py-3 text-center font-medium">
+                              {device.lastReading?.batteryVoltage
+                                ? `${device.lastReading.batteryVoltage.toFixed(
+                                    2
+                                  )}V${
+                                    device.lastReading.batteryPercentage !==
+                                    undefined
+                                      ? ` (${device.lastReading.batteryPercentage}%)`
+                                      : ""
+                                  }${
+                                    device.lastReading.batteryTimeRemaining !==
+                                    undefined
+                                      ? ` • ${Math.floor(
+                                          device.lastReading
+                                            .batteryTimeRemaining / 60
+                                        )}h ${
+                                          device.lastReading
+                                            .batteryTimeRemaining % 60
+                                        }m left`
+                                      : ""
+                                  }`
                                 : "N/A"}
                             </td>
                             <td className="px-4 py-3 text-center">

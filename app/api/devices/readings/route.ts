@@ -7,12 +7,17 @@ const createReadingSchema = z.object({
   deviceId: z.string().min(1, "Device ID is required"),
   temperature: z.number().min(-50).max(100),
   humidity: z.number().min(0).max(100),
+  batteryVoltage: z.number().min(0).max(15).optional(),
+  batteryPercentage: z.number().min(0).max(100).optional(),
+  batteryTimeRemaining: z.number().min(0).optional(),
   timestamp: z.number().transform((val) => new Date(val * 1000)), // Convert UNIX timestamp to Date
 });
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    console.log("Device reading received:", body);
 
     // Validate request body
     const validation = createReadingSchema.safeParse(body);
@@ -23,7 +28,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const { deviceId, temperature, humidity, timestamp } = validation.data;
+    const {
+      deviceId,
+      temperature,
+      humidity,
+      batteryVoltage,
+      batteryPercentage,
+      batteryTimeRemaining,
+      timestamp,
+    } = validation.data;
 
     // Check if device exists
     const device = await prisma.device.findUnique({
@@ -36,8 +49,12 @@ export async function POST(request: Request) {
 
     // Create the reading
     const reading = await prisma.$executeRaw`
-      INSERT INTO "DeviceReading" ("id", "deviceId", "temperature", "humidity", "timestamp", "createdAt")
-      VALUES (gen_random_uuid(), ${deviceId}, ${temperature}, ${humidity}, ${timestamp}, NOW())
+      INSERT INTO "DeviceReading" ("id", "deviceId", "temperature", "humidity", "batteryVoltage", "batteryPercentage", "batteryTimeRemaining", "timestamp", "createdAt")
+      VALUES (gen_random_uuid(), ${deviceId}, ${temperature}, ${humidity}, ${
+      batteryVoltage || null
+    }, ${batteryPercentage || null}, ${
+      batteryTimeRemaining || null
+    }, ${timestamp}, NOW())
       RETURNING *
     `;
 

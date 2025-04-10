@@ -19,6 +19,9 @@ interface Reading {
   deviceId: string;
   temperature: number;
   humidity: number;
+  batteryVoltage?: number;
+  batteryPercentage?: number;
+  batteryTimeRemaining?: number;
   timestamp: string;
   createdAt: string;
 }
@@ -118,6 +121,7 @@ export function LatestReadings({ deviceId, deviceName }: LatestReadingsProps) {
                 <th className="text-left py-2 font-medium">Time</th>
                 <th className="text-right py-2 font-medium">Temp</th>
                 <th className="text-right py-2 font-medium">Humidity</th>
+                <th className="text-right py-2 font-medium">Battery</th>
               </tr>
             </thead>
             <tbody>
@@ -131,6 +135,21 @@ export function LatestReadings({ deviceId, deviceName }: LatestReadingsProps) {
                   </td>
                   <td className="py-2 text-right font-medium">
                     {reading.humidity.toFixed(1)}%
+                  </td>
+                  <td className="py-2 text-right font-medium">
+                    {reading.batteryVoltage
+                      ? `${reading.batteryVoltage.toFixed(2)}V${
+                          reading.batteryPercentage !== undefined
+                            ? ` (${reading.batteryPercentage}%)`
+                            : ""
+                        }${
+                          reading.batteryTimeRemaining !== undefined
+                            ? ` • ${Math.floor(
+                                reading.batteryTimeRemaining / 60
+                              )}h ${reading.batteryTimeRemaining % 60}m`
+                            : ""
+                        }`
+                      : "N/A"}
                   </td>
                 </tr>
               ))}

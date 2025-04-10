@@ -7,6 +7,9 @@ import { z } from "zod";
 const updateReadingSchema = z.object({
   temperature: z.number().min(-50).max(100).optional(),
   humidity: z.number().min(0).max(100).optional(),
+  batteryVoltage: z.number().min(0).max(15).optional(),
+  batteryPercentage: z.number().min(0).max(100).optional(),
+  batteryTimeRemaining: z.number().min(0).optional(),
   timestamp: z
     .number()
     .transform((val) => new Date(val * 1000))
@@ -116,6 +119,9 @@ export async function PATCH(request: Request) {
       SET 
         temperature = COALESCE(${validation.data.temperature}, temperature),
         humidity = COALESCE(${validation.data.humidity}, humidity),
+        "batteryVoltage" = COALESCE(${validation.data.batteryVoltage}, "batteryVoltage"),
+        "batteryPercentage" = COALESCE(${validation.data.batteryPercentage}, "batteryPercentage"),
+        "batteryTimeRemaining" = COALESCE(${validation.data.batteryTimeRemaining}, "batteryTimeRemaining"),
         timestamp = COALESCE(${validation.data.timestamp}, timestamp)
       WHERE id = ${readingId}
     `;

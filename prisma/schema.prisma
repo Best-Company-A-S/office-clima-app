@@ -88,6 +88,9 @@ model DeviceReading {
   device Device @relation(fields: [deviceId], references: [device_id], onDelete: Cascade)
   temperature Float
   humidity Float
+  batteryVoltage Float?
+  batteryPercentage Int?
+  batteryTimeRemaining Int?
   timestamp DateTime
   createdAt DateTime @default(now())
 

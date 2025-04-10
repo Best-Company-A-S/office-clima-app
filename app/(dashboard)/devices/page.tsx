@@ -31,6 +31,9 @@ interface Device {
     temperature: number;
     humidity: number;
     airQuality: number;
+    batteryVoltage?: number;
+    batteryPercentage?: number;
+    batteryTimeRemaining?: number;
     timestamp: string;
   };
 }
