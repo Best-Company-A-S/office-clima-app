@@ -112,6 +112,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { EmptyTeams } from "@/components/EmptyTeams";
+import { EmptyRooms } from "@/components/EmptyRooms";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
@@ -1457,6 +1459,7 @@ const Dashboard = () => {
     }
   };
 
+  // Loading state
   if (isLoading || isLoadingLayouts) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[70vh]">
@@ -1468,12 +1471,39 @@ const Dashboard = () => {
     );
   }
 
+  // Get teamId for empty state check
+  const teamId = searchParams.get("teamId");
+  console.log("Dashboard render - teamId:", teamId, "allRooms:", allRooms);
+
+  // Show EmptyTeams if there's no teamId selected
+  if (!teamId) {
+    console.log("No team selected, showing EmptyTeams");
+    return (
+      <div className="p-6">
+        <EmptyTeams />
+      </div>
+    );
+  }
+
+  // If we have a team but no rooms, show empty rooms state
+  if (allRooms.length === 0) {
+    console.log("Team has no rooms, showing EmptyRooms");
+    return (
+      <div className="p-6">
+        <EmptyRooms teamId={teamId} />
+      </div>
+    );
+  }
+
+  // Regular dashboard view (when we have rooms)
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold mb-1">Dashboard</h1>
-          <p className="text-muted-foreground">Overview of your climate data</p>
+          <p className="text-muted-foreground">
+            Monitor and analyze your climate data
+          </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
