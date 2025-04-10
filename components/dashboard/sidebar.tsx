@@ -18,6 +18,7 @@ import {
   Thermometer,
   Maximize,
   RefreshCw,
+  Download,
 } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -440,6 +441,7 @@ const Sidebar = () => {
   const [activeItem, setActiveItem] = useState(() => {
     if (pathname.includes("/dashboard")) return "dashboard";
     if (pathname.includes("/devices")) return "devices";
+    if (pathname.includes("/updates")) return "updates";
     if (pathname.includes("/settings")) return "settings";
     return "dashboard"; // Default
   });
@@ -643,6 +645,7 @@ const Sidebar = () => {
   useEffect(() => {
     if (pathname.includes("/dashboard")) setActiveItem("dashboard");
     else if (pathname.includes("/devices")) setActiveItem("devices");
+    else if (pathname.includes("/updates")) setActiveItem("updates");
     else if (pathname.includes("/settings")) setActiveItem("settings");
   }, [pathname]);
 
@@ -920,6 +923,12 @@ const Sidebar = () => {
             active={activeItem === "devices"}
             onClick={() => handleNavigation("devices")}
             label="Devices"
+          />
+          <NavItem
+            icon={<Download className="w-4 h-4" />}
+            active={activeItem === "updates"}
+            onClick={() => handleNavigation("updates")}
+            label="Updates"
           />
           <NavItem
             icon={<Settings className="w-4 h-4" />}

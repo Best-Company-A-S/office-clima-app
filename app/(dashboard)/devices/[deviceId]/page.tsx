@@ -1,19 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import axios from "axios";
-import DeviceFirmwareManager from "@/components/DeviceFirmwareManager";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
+  CardFooter,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ interface DeviceDetails {
 }
 
 export default function DeviceDetailsPage() {
+  const router = useRouter();
   const { deviceId } = useParams();
   const [device, setDevice] = useState<DeviceDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,21 +55,6 @@ export default function DeviceDetailsPage() {
       fetchDeviceDetails();
     }
   }, [deviceId]);
-
-  const handleDeviceUpdate = () => {
-    // Refetch device details
-    setIsLoading(true);
-    axios
-      .get(`/api/devices/${deviceId}`)
-      .then((response) => {
-        setDevice(response.data);
-        setIsLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error refreshing device details:", error);
-        setIsLoading(false);
-      });
-  };
 
   if (isLoading) {
     return (
@@ -151,21 +137,48 @@ export default function DeviceDetailsPage() {
                 </h3>
                 <p>{device.isPaired ? "Yes" : "No"}</p>
               </div>
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Firmware Version
+                </h3>
+                <p>{device.firmwareVersion || "Unknown"}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        <Tabs defaultValue="firmware" className="w-full">
+        <Tabs defaultValue="info" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="firmware">Firmware</TabsTrigger>
+            <TabsTrigger value="info">Information</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="firmware" className="mt-4">
-            <DeviceFirmwareManager
-              deviceId={device.device_id}
-              onUpdated={handleDeviceUpdate}
-            />
+          <TabsContent value="info" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Device Information</CardTitle>
+                <CardDescription>
+                  View and manage device information
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-medium mb-2">
+                      Firmware Management
+                    </h3>
+                    <p className="text-muted-foreground mb-4">
+                      Device firmware is now managed centrally from the Updates
+                      page. This allows you to update multiple devices at once.
+                    </p>
+                    <Button onClick={() => router.push("/updates")}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Go to Updates
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="settings" className="mt-4">
