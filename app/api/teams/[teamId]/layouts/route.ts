@@ -42,7 +42,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { teamId } = params;
+    const { teamId } = await params;
 
     // Get all layouts for this team
     const layouts = await prisma.dashboardLayout.findMany({
@@ -75,7 +75,7 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { teamId } = params;
+    const { teamId } = await params;
 
     // Get the request body and validate it
     const body = await request.json();

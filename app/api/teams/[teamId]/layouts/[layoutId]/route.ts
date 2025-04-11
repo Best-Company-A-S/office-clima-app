@@ -42,7 +42,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { teamId, layoutId } = params;
+    const { teamId, layoutId } = await params;
 
     // Get the layout
     const layout = await prisma.dashboardLayout.findFirst({
@@ -77,7 +77,7 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { teamId, layoutId } = params;
+    const { teamId, layoutId } = await params;
 
     // Check if layout exists
     const existingLayout = await prisma.dashboardLayout.findFirst({
@@ -150,7 +150,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { teamId, layoutId } = params;
+    const { teamId, layoutId } = await params;
 
     // Check if layout exists
     const existingLayout = await prisma.dashboardLayout.findFirst({

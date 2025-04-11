@@ -87,7 +87,7 @@ export async function PATCH(
   const userId = parseInt(session.user.id);
 
   try {
-    const roomId = params.roomId;
+    const { roomId } = await params;
     const body = await request.json();
 
     // Validate request body

@@ -12,7 +12,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const deviceId = params.deviceId;
+    const { deviceId } = await params;
 
     const device = await prisma.device.findUnique({
       where: {
@@ -53,7 +53,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const deviceId = params.deviceId;
+    const { deviceId } = await params;
     const data = await request.json();
 
     const device = await prisma.device.findUnique({
@@ -94,7 +94,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const deviceId = params.deviceId;
+    const { deviceId } = await params;
 
     // Check if device exists
     const device = await prisma.device.findUnique({

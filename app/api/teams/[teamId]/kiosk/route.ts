@@ -17,7 +17,7 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { teamId } = params;
+    const { teamId } = await params;
     const body = await request.json();
 
     // Validate request body
@@ -97,7 +97,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { teamId } = params;
+    const { teamId } = await params;
     const userId = parseInt(session.user.id);
 
     // Check if user is a member of the team

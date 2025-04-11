@@ -28,10 +28,12 @@ export async function GET(
       return new NextResponse("Unauthorized", { status: 401 });
     }
 
+    const { teamId } = await params;
+
     // Get team settings
     const settings = await prisma.teamSettings.findFirst({
       where: {
-        teamId: params.teamId,
+        teamId: teamId,
       },
     });
 
@@ -39,7 +41,7 @@ export async function GET(
       // Create default settings if they don't exist
       const defaultSettings = await prisma.teamSettings.create({
         data: {
-          teamId: params.teamId,
+          teamId: teamId,
           temperatureUnit: "C",
           humidityUnit: "%",
           temperatureThreshold: 25.0,
@@ -68,6 +70,8 @@ export async function PATCH(
 ) {
   try {
     console.log("PATCH request received for teamId:", params.teamId);
+
+    const { teamId } = await params;
 
     const session = await auth();
     console.log("Auth session:", JSON.stringify(session, null, 2));
@@ -109,7 +113,7 @@ export async function PATCH(
       // Get existing settings first
       const existingSettings = await prisma.teamSettings.findFirst({
         where: {
-          teamId: params.teamId,
+          teamId: teamId,
         },
       });
 
@@ -123,7 +127,7 @@ export async function PATCH(
         // Create new settings if they don't exist
         const settings = await prisma.teamSettings.create({
           data: {
-            teamId: params.teamId,
+            teamId: teamId,
             ...validatedData,
           },
         });
@@ -143,27 +147,6 @@ export async function PATCH(
           "Attempting to update to:",
           validatedData.temperatureThreshold
         );
-
-        // Try using Prisma's executeRaw for direct database update
-        // This bypasses any potential caching or transformation issues
-        const query = `
-          UPDATE "TeamSettings"
-          SET 
-            "temperatureUnit" = $1,
-            "humidityUnit" = $2,
-            "temperatureThreshold" = $3,
-            "humidityThreshold" = $4,
-            "temperatureAlert" = $5,
-            "temperatureAlertThreshold" = $6,
-            "humidityAlert" = $7,
-            "humidityAlertThreshold" = $8,
-            "temperatureAlertWebhook" = $9,
-            "humidityAlertWebhook" = $10,
-            "wallpaperUrl" = $11,
-            "wallpaperBlur" = $12,
-            "updatedAt" = NOW()
-          WHERE "id" = $13
-        `;
 
         // Convert values to appropriate types
         const temperatureThreshold = Number(validatedData.temperatureThreshold);

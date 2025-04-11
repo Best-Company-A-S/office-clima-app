@@ -13,7 +13,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const firmwareId = params.firmwareId;
+    const { firmwareId } = await params;
 
     const firmware = await prisma.firmware.findUnique({
       where: {
@@ -48,7 +48,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const firmwareId = params.firmwareId;
+    const { firmwareId } = await params;
 
     // Check if firmware exists
     const firmware = await prisma.firmware.findUnique({

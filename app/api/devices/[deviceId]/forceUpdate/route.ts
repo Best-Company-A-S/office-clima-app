@@ -6,7 +6,7 @@ export async function POST(
   { params }: { params: { deviceId: string } }
 ) {
   try {
-    const { deviceId } = params;
+    const { deviceId } = await params;
 
     if (!deviceId) {
       return NextResponse.json(
