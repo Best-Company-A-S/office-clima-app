@@ -6,6 +6,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  output   = "../app/generated/prisma"
 }
 
 datasource db {
@@ -13,181 +14,118 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Team {
+
+model Building {
   id String @id @default(uuid())
   name String
   description String?
-  ownerId Int
+  logoUrl String?
+  address String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  members TeamMember[]
-  invites TeamInvite[]
-  rooms Room[]
-  settings TeamSettings[]
-  dashboardLayouts DashboardLayout[]
+
 }
 
-model TeamInvite {
+enum BuildingInvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model BuildingInvitation {
   id String @id @default(uuid())
-  teamId String
-  code String @unique
-  createdById String
-  team Team @relation(fields: [teamId], references: [id])
+  buildingId String
+  inviteCode String
+  createdByUserId String
+  status BuildingInvitationStatus
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+} 
+
+enum BuildingMemberRole {
+  ADMIN
+  MEMBER
+}
+
+model BuildingMember {
+  id String @id @default(uuid())
+  buildingId String
+  userId String
+  invitedByUserId String
+  role BuildingMemberRole
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model TeamMember {
+enum TemperatureUnit {
+  CELSIUS
+  FAHRENHEIT
+}
+
+enum HumidityUnit {
+  PERCENT
+  PPM
+}
+
+model BuildingSettings {
   id String @id @default(uuid())
-  teamId String
-  team Team @relation(fields: [teamId], references: [id])
-  userId Int 
+  buildingId String
+  temperatureUnit TemperatureUnit
+  humidityUnit HumidityUnit
+  temperatureThreshold Float
+  humidityThreshold Float
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Room {
   id String @id @default(uuid())
+  buildingId String
   name String
   description String?
-  type String? // office, classroom, meeting room, etc.
-  size Int? // size in square meters/feet
-  capacity Int? // max number of people
-  teamId String
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   devices Device[]
-  surveys Survey[]
+} 
+
+model RoomSurvey {
+  id String @id @default(uuid())
+  roomId String
+  title String
+  description String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+} 
+
+model RoomSurveyResponse {
+  id String @id @default(uuid())
+  surveyId String
+  rating Int
+  comment String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Device {
-  device_id String @id
-  name String?
+  id String @id @default(uuid())
+  name String
   description String?
-  model String?
-  firmwareVersion String?
-  firmwareStatus String? // "UP_TO_DATE", "UPDATING", "UPDATE_FAILED"
+  firmware String?
   isPaired Boolean @default(false)
-  lastSeenAt DateTime?
-  lastUpdatedAt DateTime?
-  batteryVoltage Float?
-  batteryPercentage Int?
-  batteryTimeRemaining Int?
-  autoUpdate Boolean @default(false) // Whether to auto-update from GitHub releases
   roomId String?
   room Room? @relation(fields: [roomId], references: [id])
-  pairedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   readings DeviceReading[]
-  firmwareDownloads FirmwareDownload[]
 }
 
 model DeviceReading {
   id String @id @default(uuid())
   deviceId String
-  device Device @relation(fields: [deviceId], references: [device_id], onDelete: Cascade)
+  device Device @relation(fields: [deviceId], references: [id])
   temperature Float
   humidity Float
-  batteryVoltage Float?
-  batteryPercentage Int?
-  batteryTimeRemaining Int?
-  timestamp DateTime
-  createdAt DateTime @default(now())
-
-  @@index([deviceId])
-  @@index([timestamp])
-}
-
-model Survey {
-  id          String           @id @default(uuid())
-  title       String
-  active      Boolean          @default(true)
-  roomId      String
-  room        Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  createdById Int
-  responses   SurveyResponse[]
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
-  questions   Json             @default("[{\"id\":\"comfort\",\"text\":\"How do you feel about the indoor climate?\"},{\"id\":\"suggestions\",\"text\":\"Do you have any suggestions for improvement?\"}]")
-
-  @@index([roomId])
-  @@index([createdById])
-}
-
-model SurveyResponse {
-  id        String   @id @default(uuid())
-  surveyId  String
-  survey    Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  rating    Int      @default(0)
-  comment   String?  @db.Text
-  answers   Json     @default("{}")
-  createdAt DateTime @default(now())
-
-  @@index([surveyId])
-}
-
-model TeamSettings {
-  id String @id @default(uuid())
-  teamId String
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  temperatureUnit String @default("C")
-  humidityUnit String @default("%")
-  temperatureThreshold Float @default(25.0)
-  humidityThreshold Float @default(50.0)
-  temperatureAlert Boolean @default(false)
-  temperatureAlertThreshold Float @default(25.0)
-  humidityAlert Boolean @default(false)
-  humidityAlertThreshold Float @default(50.0)
-  temperatureAlertWebhook String?
-  humidityAlertWebhook String?
-  wallpaperUrl String?
-  wallpaperBlur Int @default(0)
-  kioskMode Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model DashboardLayout {
-  id String @id @default(uuid())
-  teamId String
-  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  layout Json // Stores the grid layout configuration
-  isDefault Boolean @default(false)
-  name String @default("Default Layout")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([teamId])
-}
-
-// New models for OTA updates
-model Firmware {
-  id           String   @id @default(uuid())
-  version      String   // e.g., "v0.6.0"
-  modelType    String   // e.g., "Arduino_UNO_R4_WiFi"
-  releaseNotes String?  @db.Text
-  filename     String
-  fileSize     Int
-  filePath     String
-  checksumMD5  String
-  status       String   // "DRAFT", "RELEASED", "DEPRECATED"
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  downloads    FirmwareDownload[]
-
-  @@unique([modelType, version])
-}
-
-model FirmwareDownload {
-  id           String   @id @default(uuid())
-  deviceId     String
-  firmwareId   String
-  downloadedAt DateTime @default(now())
-  status       String   // "INITIATED", "COMPLETED", "FAILED", "INSTALLED"
-
-  device       Device   @relation(fields: [deviceId], references: [device_id])
-  firmware     Firmware @relation(fields: [firmwareId], references: [id])
-}
