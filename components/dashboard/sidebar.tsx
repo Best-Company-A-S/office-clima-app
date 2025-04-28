@@ -71,6 +71,11 @@ import {
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+// Import atomic stores
+import { Team, useTeamsStore } from "@/lib/store/useTeamsStore";
+import { ExtendedRoom, useRoomsStore } from "@/lib/store/useRoomsStore";
+import { useDevicesStore } from "@/lib/store/useDevicesStore";
+import { createSelectors } from "@/lib/store/useStoreSelectors";
 
 interface NavItemProps {
   icon: React.ReactNode;
@@ -113,24 +118,18 @@ const NavItem = ({ icon, active, onClick, loading, label }: NavItemProps) => (
   </motion.button>
 );
 
-interface Team {
+// Use our atomic store interface instead of duplicating
+// interface Team already defined in useTeamsStore.ts
+
+// Update Room to match ExtendedRoom or use the imported type
+interface DeviceBasic {
   id: string;
   name: string;
-  ownerId: string;
 }
 
-interface Room {
-  id: string;
-  name: string;
-  description: string | null;
-  type: string | null;
-  size: number | null;
-  capacity: number | null;
-  teamId: string;
-  devices: Array<{
-    id: string;
-    name: string;
-  }>;
+// Convert Room interface to use ExtendedRoom and add any missing fields
+interface RoomWithDevices extends ExtendedRoom {
+  devices: DeviceBasic[];
 }
 
 interface ApiResponse<T> {
@@ -163,6 +162,10 @@ const roomFormSchema = z.object({
 
 type RoomFormValues = z.infer<typeof roomFormSchema>;
 
+// Create typed selectors for rooms store
+const useRoomsSelectors =
+  createSelectors<ReturnType<typeof useRoomsStore.getState>>();
+
 // Room Modal Component
 const RoomModal = ({
   isOpen,
@@ -173,12 +176,18 @@ const RoomModal = ({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  room?: Room;
+  room?: ExtendedRoom;
   teamId: string;
-  onSave: (room: Room) => void;
+  onSave: (room: ExtendedRoom) => void;
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const isEditing = !!room;
+
+  // Use atomic state selectors
+  const { addRoom, updateRoom } = useRoomsSelectors(useRoomsStore, (state) => ({
+    addRoom: state.addRoom,
+    updateRoom: state.updateRoom,
+  }));
 
   const form = useForm<RoomFormValues>({
     resolver: zodResolver(roomFormSchema),
@@ -200,66 +209,34 @@ const RoomModal = ({
         size: room.size || undefined,
         capacity: room.capacity || undefined,
       });
-    } else if (isOpen && !room) {
-      form.reset({
-        name: "",
-        description: "",
-        type: "",
-        size: undefined,
-        capacity: undefined,
-      });
     }
-  }, [isOpen, room, form]);
+  }, [form, isOpen, room]);
 
   const onSubmit = async (values: RoomFormValues) => {
     setIsLoading(true);
-
     try {
-      const endpoint = isEditing
-        ? `/api/rooms/${room.id}`
-        : "/api/rooms/create";
-
-      const method = isEditing ? "PATCH" : "POST";
-
-      // Ensure numeric values are properly handled
-      const payload = {
-        ...values,
-        teamId: isEditing ? undefined : teamId,
-        size: Number(values.size),
-        capacity: Number(values.capacity),
-      };
-
-      console.log("Sending room data:", payload);
-
-      const response = await axios({
-        method,
-        url: endpoint,
-        data: payload,
-      });
-
-      if (response.status === 200 || response.status === 201) {
-        toast.success(`Room ${isEditing ? "updated" : "created"} successfully`);
-        onSave(response.data);
-        onClose();
-      }
-    } catch (error) {
-      console.error(
-        `Failed to ${isEditing ? "update" : "create"} room:`,
-        error
-      );
-      // Show more detailed error message if available
-      if (axios.isAxiosError(error) && error.response?.data) {
-        const errorData = error.response.data;
-        toast.error(
-          typeof errorData === "string"
-            ? errorData
-            : `Failed to ${
-                isEditing ? "update" : "create"
-              } room: ${JSON.stringify(errorData)}`
+      if (isEditing && room) {
+        // Update existing room
+        const response = await api.patch<ExtendedRoom>(
+          `/rooms/${room.id}`,
+          values
         );
+        // Update store directly
+        updateRoom(room.id, values);
+        onSave(response.data);
       } else {
-        toast.error(`Failed to ${isEditing ? "update" : "create"} room`);
+        // Create new room
+        const response = await api.post<ExtendedRoom>(
+          `/rooms?teamId=${teamId}`,
+          values
+        );
+        // Add to store directly
+        addRoom(response.data);
+        onSave(response.data);
       }
+      onClose();
+    } catch (error) {
+      console.error("Failed to save room:", error);
     } finally {
       setIsLoading(false);
     }
@@ -438,6 +415,73 @@ const Sidebar = () => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { data: session, status } = useSession();
+
+  // Create typed selectors for stores
+  const useTeamsSelectors =
+    createSelectors<ReturnType<typeof useTeamsStore.getState>>();
+  const useRoomsSelectors =
+    createSelectors<ReturnType<typeof useRoomsStore.getState>>();
+
+  // Use atomic state selectors for teams
+  const {
+    teams,
+    selectedTeamId,
+    setTeams,
+    setSelectedTeamId,
+    addTeam,
+    updateTeam,
+    removeTeam,
+    isLoading: teamsLoading,
+    setIsLoading: setTeamsLoading,
+    setError: setTeamsError,
+  } = useTeamsSelectors(useTeamsStore, (state) => ({
+    teams: state.teams,
+    selectedTeamId: state.selectedTeamId,
+    setTeams: state.setTeams,
+    setSelectedTeamId: state.setSelectedTeamId,
+    addTeam: state.addTeam,
+    updateTeam: state.updateTeam,
+    removeTeam: state.removeTeam,
+    isLoading: state.isLoading,
+    setIsLoading: state.setIsLoading,
+    setError: state.setError,
+  }));
+
+  // Use atomic state selectors for rooms
+  const {
+    rooms,
+    selectedRoomId,
+    setRooms,
+    setSelectedRoomId,
+    getRoomsByTeamId,
+    getRoomById,
+    addRoom,
+    updateRoom,
+    removeRoom,
+    isLoading: roomsLoading,
+    setIsLoading: setRoomsLoading,
+    setError: setRoomsError,
+  } = useRoomsSelectors(useRoomsStore, (state) => ({
+    rooms: state.rooms,
+    selectedRoomId: state.selectedRoomId,
+    setRooms: state.setRooms,
+    setSelectedRoomId: state.setSelectedRoomId,
+    getRoomsByTeamId: state.getRoomsByTeamId,
+    getRoomById: state.getRoomById,
+    addRoom: state.addRoom,
+    updateRoom: state.updateRoom,
+    removeRoom: state.removeRoom,
+    isLoading: state.isLoading,
+    setIsLoading: state.setIsLoading,
+    setError: state.setError,
+  }));
+
+  // Get selected team and room from atomic state
+  const selectedTeam = selectedTeamId
+    ? teams.find((t) => t.id === selectedTeamId)
+    : null;
+  const selectedRoom = selectedRoomId ? getRoomById(selectedRoomId) : null;
+
   const [activeItem, setActiveItem] = useState(() => {
     if (pathname.includes("/dashboard")) return "dashboard";
     if (pathname.includes("/devices")) return "devices";
@@ -449,10 +493,6 @@ const Sidebar = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState<NodeJS.Timeout | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [loadingStates, setLoadingStates] = useState({
     teams: false,
     rooms: false,
@@ -466,7 +506,7 @@ const Sidebar = () => {
     name: string;
   } | null>(null);
   const [roomModalOpen, setRoomModalOpen] = useState(false);
-  const [roomToEdit, setRoomToEdit] = useState<Room | null>(null);
+  const [roomToEdit, setRoomToEdit] = useState<ExtendedRoom | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
     type: "team" | "room";
     id: string;
@@ -636,9 +676,21 @@ const Sidebar = () => {
   // Update URL when team/room changes
   const updateURL = (teamId?: string, roomId?: string) => {
     const params = new URLSearchParams(searchParams);
-    if (teamId) params.set("teamId", teamId);
-    if (roomId) params.set("roomId", roomId);
-    router.push(`${pathname}?${params.toString()}`);
+
+    if (teamId) {
+      params.set("teamId", teamId);
+    } else {
+      params.delete("teamId");
+    }
+
+    if (roomId) {
+      params.set("roomId", roomId);
+    } else {
+      params.delete("roomId");
+    }
+
+    const newPathname = `${pathname}?${params.toString()}`;
+    router.push(newPathname);
   };
 
   // Effect to update activeItem when pathname changes
@@ -656,9 +708,12 @@ const Sidebar = () => {
 
       try {
         setLoadingStates((prev) => ({ ...prev, teams: true }));
+        setTeamsLoading(true);
+
         const response = await api.get<Team[]>("/teams");
         const fetchedTeams = response.data;
 
+        // Update store
         setTeams(fetchedTeams);
 
         // Select team from URL or first team
@@ -668,13 +723,15 @@ const Sidebar = () => {
           : fetchedTeams[0];
 
         if (teamToSelect) {
-          setSelectedTeam(teamToSelect);
+          setSelectedTeamId(teamToSelect.id);
           if (!urlTeamId) updateURL(teamToSelect.id);
         }
       } catch (error) {
         console.error("Failed to fetch teams:", error);
+        setTeamsError("Failed to fetch teams");
       } finally {
         setLoadingStates((prev) => ({ ...prev, teams: false }));
+        setTeamsLoading(false);
       }
     };
 
@@ -688,9 +745,13 @@ const Sidebar = () => {
 
       try {
         setLoadingStates((prev) => ({ ...prev, rooms: true }));
-        const response = await api.get<Room[]>(
+        setRoomsLoading(true);
+
+        const response = await api.get<ExtendedRoom[]>(
           `/rooms?teamId=${selectedTeam.id}`
         );
+
+        // Update store
         setRooms(response.data);
 
         // Select room from URL or first room
@@ -700,13 +761,15 @@ const Sidebar = () => {
           : response.data[0];
 
         if (roomToSelect) {
-          setSelectedRoom(roomToSelect);
+          setSelectedRoomId(roomToSelect.id);
           if (!urlRoomId) updateURL(selectedTeam.id, roomToSelect.id);
         }
       } catch (error) {
         console.error("Failed to fetch rooms:", error);
+        setRoomsError("Failed to fetch rooms");
       } finally {
         setLoadingStates((prev) => ({ ...prev, rooms: false }));
+        setRoomsLoading(false);
       }
     };
 
@@ -714,12 +777,12 @@ const Sidebar = () => {
   }, [selectedTeam?.id, status, searchParams]);
 
   const handleTeamSelect = (team: Team) => {
-    setSelectedTeam(team);
+    setSelectedTeamId(team.id);
     updateURL(team.id);
   };
 
-  const handleRoomSelect = (room: Room) => {
-    setSelectedRoom(room);
+  const handleRoomSelect = (room: ExtendedRoom) => {
+    setSelectedRoomId(room.id);
     updateURL(selectedTeam?.id, room.id);
   };
 
@@ -729,10 +792,13 @@ const Sidebar = () => {
       const response = await api.post<Team>("/teams/create", {
         name: "New Team",
       });
-      setTeams((prev) => [...prev, response.data]);
+
+      // Add to store directly
+      addTeam(response.data);
       handleTeamSelect(response.data);
     } catch (error) {
       console.error("Failed to create team:", error);
+      setTeamsError("Failed to create team");
     } finally {
       setLoadingStates((prev) => ({ ...prev, createTeam: false }));
     }
@@ -744,24 +810,20 @@ const Sidebar = () => {
     setRoomModalOpen(true);
   };
 
-  const handleEditRoom = (room: Room) => {
+  const handleEditRoom = (room: ExtendedRoom) => {
     setRoomToEdit(room);
     setRoomModalOpen(true);
   };
 
-  const handleRoomSave = (room: Room) => {
+  const handleRoomSave = (room: ExtendedRoom) => {
     if (roomToEdit) {
-      // Update existing room in the list
-      setRooms((prev) => prev.map((r) => (r.id === room.id ? room : r)));
-
-      // If we're editing the selected room, update that too
-      if (selectedRoom?.id === room.id) {
-        setSelectedRoom(room);
+      // If we're editing the selected room, update the selected ID
+      if (selectedRoomId === room.id) {
+        setSelectedRoomId(room.id);
       }
     } else {
-      // Add new room to the list
-      setRooms((prev) => [...prev, room]);
-      handleRoomSelect(room);
+      // Select the newly created room
+      setSelectedRoomId(room.id);
     }
   };
 
@@ -821,16 +883,15 @@ const Sidebar = () => {
     try {
       setLoadingStates((prev) => ({ ...prev, teams: true }));
       await api.patch(`/teams/${teamId}`, { name: newName });
-      setTeams((prev) =>
-        prev.map((team) =>
-          team.id === teamId ? { ...team, name: newName } : team
-        )
-      );
+
+      // Update store directly
+      updateTeam(teamId, { name: newName });
       setEditingTeam(null);
       toast.success("Team updated successfully");
     } catch (error) {
       console.error("Failed to update team:", error);
       toast.error("Failed to update team");
+      setTeamsError("Failed to update team");
     } finally {
       setLoadingStates((prev) => ({ ...prev, teams: false }));
     }
@@ -840,8 +901,12 @@ const Sidebar = () => {
     try {
       setLoadingStates((prev) => ({ ...prev, teams: true }));
       await api.delete(`/teams/${teamId}`);
-      setTeams((prev) => prev.filter((team) => team.id !== teamId));
-      if (selectedTeam?.id === teamId) {
+
+      // Remove from store directly
+      removeTeam(teamId);
+
+      // If we deleted the selected team, select another one
+      if (selectedTeamId === teamId) {
         const nextTeam = teams.find((team) => team.id !== teamId);
         if (nextTeam) {
           handleTeamSelect(nextTeam);
@@ -853,6 +918,7 @@ const Sidebar = () => {
     } catch (error) {
       console.error("Failed to delete team:", error);
       toast.error("Failed to delete team");
+      setTeamsError("Failed to delete team");
     } finally {
       setLoadingStates((prev) => ({ ...prev, teams: false }));
       setDeleteConfirmation(null);
@@ -863,11 +929,15 @@ const Sidebar = () => {
     try {
       setLoadingStates((prev) => ({ ...prev, rooms: true }));
       await api.delete(`/rooms/${roomId}`);
-      setRooms((prev) => prev.filter((room) => room.id !== roomId));
-      if (selectedRoom?.id === roomId) {
+
+      // Remove from store directly
+      removeRoom(roomId);
+
+      // If we deleted the selected room, select another one
+      if (selectedRoomId === roomId) {
         const nextRoom = rooms.find((room) => room.id !== roomId);
         if (nextRoom) {
-          handleRoomSelect(nextRoom);
+          setSelectedRoomId(nextRoom.id);
         } else {
           updateURL(selectedTeam?.id);
         }
@@ -876,6 +946,7 @@ const Sidebar = () => {
     } catch (error) {
       console.error("Failed to delete room:", error);
       toast.error("Failed to delete room");
+      setRoomsError("Failed to delete room");
     } finally {
       setLoadingStates((prev) => ({ ...prev, rooms: false }));
       setDeleteConfirmation(null);
@@ -1057,7 +1128,7 @@ const Sidebar = () => {
               <div>
                 <NavItem
                   icon={<DoorClosed className="w-4 h-4" />}
-                  loading={loadingStates.rooms}
+                  loading={roomsLoading}
                   label="Switch Room"
                 />
               </div>
@@ -1073,83 +1144,98 @@ const Sidebar = () => {
                 side="right"
               >
                 <div className="flex flex-col">
-                  {rooms.map((room) => (
-                    <div key={room.id} className="group flex items-center">
+                  {selectedTeam ? (
+                    <>
+                      {getRoomsByTeamId(selectedTeam.id).length === 0 ? (
+                        <div className="p-2 text-xs text-white/30 text-center">
+                          No rooms yet
+                        </div>
+                      ) : (
+                        getRoomsByTeamId(selectedTeam.id).map((room) => (
+                          <div
+                            key={room.id}
+                            className="group flex items-center"
+                          >
+                            <motion.button
+                              whileHover={{
+                                backgroundColor: "rgba(255,255,255,0.03)",
+                              }}
+                              onClick={() => setSelectedRoomId(room.id)}
+                              className={cn(
+                                "flex-1 px-2.5 py-1.5 rounded-md text-white/70 text-sm text-left",
+                                selectedRoomId === room.id &&
+                                  "bg-white/5 text-white"
+                              )}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span>{room.name}</span>
+                                <span className="text-xs text-white/40">
+                                  {room._count?.devices || 0}
+                                </span>
+                              </div>
+                            </motion.button>
+                            <DropdownMenu.Root>
+                              <DropdownMenu.Trigger asChild>
+                                <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/5 rounded-md">
+                                  <MoreVertical className="h-4 w-4 text-white/40" />
+                                </button>
+                              </DropdownMenu.Trigger>
+                              <DropdownMenu.Portal>
+                                <DropdownMenu.Content
+                                  className="z-[100] min-w-[180px] rounded-md bg-neutral-950/95 backdrop-blur-xl 
+                                            border border-white/5 p-1 shadow-xl"
+                                >
+                                  <DropdownMenu.Item
+                                    onClick={() => handleEditRoom(room)}
+                                    className="flex items-center gap-2 px-2 py-1.5 text-sm text-white/70 
+                                             hover:bg-white/5 rounded-sm cursor-pointer"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                    Edit Room
+                                  </DropdownMenu.Item>
+                                  <DropdownMenu.Item
+                                    onClick={() =>
+                                      setDeleteConfirmation({
+                                        type: "room",
+                                        id: room.id,
+                                        name: room.name,
+                                      })
+                                    }
+                                    className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-400/80 
+                                             hover:bg-white/5 rounded-sm cursor-pointer"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete Room
+                                  </DropdownMenu.Item>
+                                </DropdownMenu.Content>
+                              </DropdownMenu.Portal>
+                            </DropdownMenu.Root>
+                          </div>
+                        ))
+                      )}
                       <motion.button
                         whileHover={{
                           backgroundColor: "rgba(255,255,255,0.03)",
                         }}
-                        onClick={() => handleRoomSelect(room)}
-                        className={cn(
-                          "flex-1 px-2.5 py-1.5 rounded-md text-white/70 text-sm text-left",
-                          selectedRoom?.id === room.id &&
-                            "bg-white/5 text-white"
-                        )}
+                        onClick={handleCreateRoom}
+                        disabled={loadingStates.createRoom}
+                        className="px-2.5 py-1.5 mt-1 border-t border-white/5 rounded-md 
+                                text-white/40 hover:text-white/70 text-sm text-left w-full
+                                flex items-center space-x-2"
                       >
-                        <div className="flex items-center justify-between">
-                          <span>{room.name}</span>
-                          <span className="text-xs text-white/40">
-                            {room.devices?.length || 0}
-                          </span>
-                        </div>
+                        {loadingStates.createRoom ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                        <span>Create Room</span>
                       </motion.button>
-                      <DropdownMenu.Root>
-                        <DropdownMenu.Trigger asChild>
-                          <button className="opacity-0 group-hover:opacity-100 p-1 hover:bg-white/5 rounded-md">
-                            <MoreVertical className="h-4 w-4 text-white/40" />
-                          </button>
-                        </DropdownMenu.Trigger>
-                        <DropdownMenu.Portal>
-                          <DropdownMenu.Content
-                            className="z-[100] min-w-[180px] rounded-md bg-neutral-950/95 backdrop-blur-xl 
-                                          border border-white/5 p-1 shadow-xl"
-                          >
-                            <DropdownMenu.Item
-                              onClick={() => handleEditRoom(room)}
-                              className="flex items-center gap-2 px-2 py-1.5 text-sm text-white/70 
-                                         hover:bg-white/5 rounded-sm cursor-pointer"
-                            >
-                              <Pencil className="h-4 w-4" />
-                              Edit Room
-                            </DropdownMenu.Item>
-                            <DropdownMenu.Item
-                              onClick={() =>
-                                setDeleteConfirmation({
-                                  type: "room",
-                                  id: room.id,
-                                  name: room.name,
-                                })
-                              }
-                              className="flex items-center gap-2 px-2 py-1.5 text-sm text-red-400/80 
-                                         hover:bg-white/5 rounded-sm cursor-pointer"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Delete Room
-                            </DropdownMenu.Item>
-                          </DropdownMenu.Content>
-                        </DropdownMenu.Portal>
-                      </DropdownMenu.Root>
+                    </>
+                  ) : (
+                    <div className="p-2 text-xs text-white/30 text-center">
+                      Select a team first
                     </div>
-                  ))}
-                  <motion.button
-                    whileHover={{ backgroundColor: "rgba(255,255,255,0.03)" }}
-                    onClick={handleCreateRoom}
-                    disabled={loadingStates.createRoom || !selectedTeam}
-                    className={cn(
-                      "px-2.5 py-1.5 mt-1 border-t border-white/5 rounded-md text-sm text-left w-full",
-                      "flex items-center space-x-2",
-                      selectedTeam
-                        ? "text-white/40 hover:text-white/70"
-                        : "text-white/20 cursor-not-allowed"
-                    )}
-                  >
-                    {loadingStates.createRoom ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="w-3.5 h-3.5" />
-                    )}
-                    <span>Create Room</span>
-                  </motion.button>
+                  )}
                 </div>
               </Popover.Content>
             </Popover.Portal>
@@ -1244,63 +1330,49 @@ const Sidebar = () => {
       <DevicePairingModal />
 
       {/* Room Modal */}
-      {selectedTeam && (
+      {roomModalOpen && selectedTeam && (
         <RoomModal
           isOpen={roomModalOpen}
-          onClose={() => {
-            setRoomModalOpen(false);
-            setRoomToEdit(null);
-          }}
+          onClose={() => setRoomModalOpen(false)}
           room={roomToEdit || undefined}
           teamId={selectedTeam.id}
           onSave={handleRoomSave}
         />
       )}
 
+      {/* Confirmation Dialog for Deletion */}
       <AlertDialog
-        open={deleteConfirmation !== null}
-        onOpenChange={() => setDeleteConfirmation(null)}
+        open={!!deleteConfirmation}
+        onOpenChange={(open) => !open && setDeleteConfirmation(null)}
       >
-        <AlertDialogContent className="bg-neutral-950/95 border-white/10 text-white">
+        <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
               Delete {deleteConfirmation?.type === "team" ? "Team" : "Room"}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-white/70">
-              Are you sure you want to delete{" "}
-              <span className="font-medium text-white">
-                {deleteConfirmation?.name}
-              </span>
-              ? This action cannot be undone.
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;
+              {deleteConfirmation?.name || ""}
+              &quot;? This action cannot be undone.
               {deleteConfirmation?.type === "team" && (
-                <p className="mt-2 text-red-400">
+                <span className="block mt-2 text-red-500">
                   This will also delete all rooms and device associations within
                   this team.
-                </p>
-              )}
-              {deleteConfirmation?.type === "room" && (
-                <p className="mt-2 text-red-400">
-                  This will remove all device associations within this room.
-                </p>
+                </span>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel
-              className="bg-transparent border-white/10 text-white/70 hover:bg-white/5 hover:text-white"
-              onClick={() => setDeleteConfirmation(null)}
-            >
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"
               onClick={() => {
-                if (deleteConfirmation?.type === "team") {
+                if (deleteConfirmation?.type === "team" && deleteConfirmation) {
                   handleDeleteTeam(deleteConfirmation.id);
-                } else if (deleteConfirmation?.type === "room") {
+                } else if (deleteConfirmation) {
                   handleDeleteRoom(deleteConfirmation.id);
                 }
               }}
+              className="bg-red-500 text-white hover:bg-red-600"
             >
               Delete
             </AlertDialogAction>

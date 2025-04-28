@@ -9,7 +9,7 @@ import {
   CardDescription,
   CardFooter,
 } from "@/components/ui/card";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LatestReadings } from "./LatestReadings";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { motion, AnimatePresence } from "framer-motion";
@@ -39,49 +39,68 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-interface Device {
-  device_id: string;
-  name: string | null;
-  description: string | null;
-  model: string | null;
-  firmwareVersion: string | null;
-  isPaired: boolean;
-  lastSeenAt: string | null;
-  roomId: string | null;
-  lastReading?: {
-    temperature: number;
-    humidity: number;
-    airQuality: number;
-    batteryVoltage?: number;
-    batteryPercentage?: number;
-    batteryTimeRemaining?: number;
-    timestamp: string;
-  };
-}
+import { Device, useDevicesStore } from "@/lib/store/useDevicesStore";
+import { createSelectors } from "@/lib/store/useStoreSelectors";
 
 interface DeviceListProps {
   roomId: string;
-  devices: Device[];
+  initialDevices: Device[];
 }
 
-export function DeviceList({ roomId, devices }: DeviceListProps) {
-  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [view, setView] = useState<"grid" | "list">("grid");
-  const [isRefreshing, setIsRefreshing] = useState(false);
+// Create typed selectors for DevicesStore
+const useDevicesSelectors =
+  createSelectors<ReturnType<typeof useDevicesStore.getState>>();
 
-  // Auto-select first device when component mounts
+export function DeviceList({ roomId, initialDevices }: DeviceListProps) {
+  // Use atomic state selectors for better performance
+  const {
+    devices,
+    selectedDeviceId,
+    setDevices,
+    setSelectedDeviceId,
+    getDevicesByRoomId,
+    setIsLoading,
+  } = useDevicesSelectors(useDevicesStore, (state) => ({
+    devices: state.devices,
+    selectedDeviceId: state.selectedDeviceId,
+    setDevices: state.setDevices,
+    setSelectedDeviceId: state.setSelectedDeviceId,
+    getDevicesByRoomId: state.getDevicesByRoomId,
+    setIsLoading: state.setIsLoading,
+  }));
+
+  // Local state for view mode and refresh handling
+  const { view, setView, isRefreshing, setIsRefreshing } = useViewState();
+
+  // Initialize devices in the store if needed
   useEffect(() => {
-    if (devices.length > 0 && !selectedDevice) {
-      setSelectedDevice(devices[0]);
+    if (initialDevices.length > 0 && devices.length === 0) {
+      setDevices(initialDevices);
     }
-  }, [devices]);
+  }, [initialDevices, devices.length, setDevices]);
+
+  // Get filtered devices for this room
+  const roomDevices = getDevicesByRoomId(roomId);
+
+  // Get selected device
+  const selectedDevice = selectedDeviceId
+    ? devices.find((d) => d.device_id === selectedDeviceId)
+    : roomDevices[0] || null;
+
+  // Auto-select first device when component mounts or when devices change
+  useEffect(() => {
+    if (roomDevices.length > 0 && !selectedDeviceId) {
+      setSelectedDeviceId(roomDevices[0].device_id);
+    }
+  }, [roomDevices, selectedDeviceId, setSelectedDeviceId]);
 
   // Simulate refresh functionality
   const handleRefresh = () => {
     setIsRefreshing(true);
+    setIsLoading(true);
     setTimeout(() => {
       setIsRefreshing(false);
+      setIsLoading(false);
     }, 1500);
   };
 
@@ -173,7 +192,7 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
     return "text-red-500";
   };
 
-  if (devices.length === 0) {
+  if (roomDevices.length === 0) {
     return (
       <Card className="col-span-full border-none shadow-md rounded-xl overflow-hidden">
         <CardHeader>
@@ -274,7 +293,7 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
                         ? "border-primary/70 shadow-md bg-primary/5"
                         : "hover:border-primary/30 hover:shadow-md"
                     }`}
-                    onClick={() => setSelectedDevice(device)}
+                    onClick={() => setSelectedDeviceId(device.device_id)}
                   >
                     <CardHeader className="pb-2 flex flex-row items-start justify-between space-y-0">
                       <div>
@@ -528,7 +547,9 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
                                 ? "bg-primary/5"
                                 : ""
                             }`}
-                            onClick={() => setSelectedDevice(device)}
+                            onClick={() =>
+                              setSelectedDeviceId(device.device_id)
+                            }
                           >
                             <td className="px-4 py-3">
                               <div className="flex flex-col">
@@ -637,4 +658,12 @@ export function DeviceList({ roomId, devices }: DeviceListProps) {
       )}
     </motion.div>
   );
+}
+
+// Extract view state to a custom hook
+function useViewState() {
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  return { view, setView, isRefreshing, setIsRefreshing };
 }

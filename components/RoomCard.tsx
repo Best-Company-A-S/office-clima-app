@@ -1,6 +1,5 @@
 "use client";
 
-import { Room } from "@prisma/client";
 import {
   Card,
   CardContent,
@@ -45,17 +44,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ExtendedRoom, useRoomsStore } from "@/lib/store/useRoomsStore";
+import { createSelectors } from "@/lib/store/useStoreSelectors";
 
 interface RoomCardProps {
-  room: Room & {
-    devices: any[];
-    _count: {
-      devices: number;
-    };
-  };
+  room: ExtendedRoom;
   isTeamOwner: boolean;
   onRoomDeleted?: () => void;
 }
+
+// Create typed selectors for RoomsStore
+const useRoomsSelectors =
+  createSelectors<ReturnType<typeof useRoomsStore.getState>>();
 
 export const RoomCard = ({
   room,
@@ -67,13 +67,20 @@ export const RoomCard = ({
   const devicePairingModal = useDevicePairingModal();
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const deviceCount = room._count.devices;
+  // Use atomic state selectors
+  const { removeRoom } = useRoomsSelectors(useRoomsStore, (state) => ({
+    removeRoom: state.removeRoom,
+  }));
+
+  const deviceCount = room._count?.devices || 0;
   const hasDevices = deviceCount > 0;
 
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
       await axios.delete(`/api/rooms/${room.id}`);
+      // Update local state immediately
+      removeRoom(room.id);
       toast.success("Room deleted successfully");
       if (onRoomDeleted) {
         onRoomDeleted();
@@ -116,59 +123,60 @@ export const RoomCard = ({
     // Display brief info about the devices
     return (
       <div className="grid grid-cols-1 gap-2">
-        {room.devices.slice(0, 3).map((device) => (
-          <div
-            key={device.device_id}
-            className="flex items-center justify-between bg-muted/10 p-3 rounded-md border border-border/50 hover:border-primary/20 transition-colors"
-          >
-            <div className="flex items-center">
-              <div className="bg-primary/10 p-1.5 rounded-full mr-3">
-                <Thermometer className="h-4 w-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">
-                  {device.name || "Unnamed Device"}
-                </p>
-                {device.lastSeenAt && (
-                  <p className="text-xs text-muted-foreground">
-                    Last active{" "}
-                    {formatDistanceToNow(new Date(device.lastSeenAt), {
-                      addSuffix: true,
-                    })}
+        {room.devices &&
+          room.devices.slice(0, 3).map((device) => (
+            <div
+              key={device.device_id}
+              className="flex items-center justify-between bg-muted/10 p-3 rounded-md border border-border/50 hover:border-primary/20 transition-colors"
+            >
+              <div className="flex items-center">
+                <div className="bg-primary/10 p-1.5 rounded-full mr-3">
+                  <Thermometer className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">
+                    {device.name || "Unnamed Device"}
                   </p>
-                )}
+                  {device.lastSeenAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Last active{" "}
+                      {formatDistanceToNow(new Date(device.lastSeenAt), {
+                        addSuffix: true,
+                      })}
+                    </p>
+                  )}
+                </div>
               </div>
+
+              {device.lastReading && (
+                <div className="flex gap-1.5">
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="text-xs font-medium flex items-center">
+                          <Thermometer className="h-3 w-3 mr-1 text-red-500" />
+                          {device.lastReading.temperature}°C
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Temperature</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="text-xs font-medium flex items-center">
+                          <Droplet className="h-3 w-3 mr-1 text-blue-500" />
+                          {device.lastReading.humidity}%
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Humidity</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
             </div>
-
-            {device.lastReading && (
-              <div className="flex gap-1.5">
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="text-xs font-medium flex items-center">
-                        <Thermometer className="h-3 w-3 mr-1 text-red-500" />
-                        {device.lastReading.temperature}°C
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">Temperature</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="text-xs font-medium flex items-center">
-                        <Droplet className="h-3 w-3 mr-1 text-blue-500" />
-                        {device.lastReading.humidity}%
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">Humidity</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-            )}
-          </div>
-        ))}
+          ))}
 
         {deviceCount > 3 && (
           <div className="text-center text-sm text-muted-foreground mt-1 p-1 bg-muted/10 rounded-md border border-border/50">

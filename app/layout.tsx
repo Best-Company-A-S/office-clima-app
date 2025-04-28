@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/theme-provder";
 import { SessionProvider } from "next-auth/react";
 import { ModalProvider } from "../providers/ModalProvider";
 import { Toaster } from "@/components/ui/sonner";
+import { StoreProvider } from "@/lib/store";
 
 export const metadata: Metadata = {
   title: "Office Clima",
@@ -25,9 +26,11 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <SessionProvider>
-            <Toaster position="top-center" />
-            <ModalProvider />
-            {children}
+            <StoreProvider>
+              <Toaster position="top-center" />
+              <ModalProvider />
+              {children}
+            </StoreProvider>
           </SessionProvider>
         </ThemeProvider>
       </body>

@@ -66,7 +66,7 @@ graph TD
     subgraph "Application Layer"
         Frontend -->|API Requests| API[Next.js API Routes]
         API -->|Authentication| Auth[NextAuth.js]
-        Frontend -->|State Management| React[React Context/Hooks]
+        Frontend -->|State Management| Zustand[Zustand Atomic Stores]
         Frontend -->|UI Components| UI[Shadcn/UI + Tailwind]
         UI -->|Data Visualization| Charts[Recharts Library]
     end
@@ -93,6 +93,7 @@ graph TD
     style API fill:#f9f9f9,stroke:#333,stroke-width:2px
     style DB fill:#e1f5fe,stroke:#333,stroke-width:2px
     style IoTDevices fill:#e8f5e9,stroke:#333,stroke-width:2px
+    style Zustand fill:#fff8e1,stroke:#333,stroke-width:2px
 ```
 
 ## Detailed Database Schema
@@ -619,3 +620,61 @@ Projektet anvender objektorienteret design med TypeScript hvor:
 ## Krav til Målpinde
 
 Dette projekt er udviklet med henblik på at opfylde en række faglige målpinde. Se [målpinde-listen](projekt-status.md) for en detaljeret oversigt over, hvilke faglige mål projektet dækker.
+
+## Atomic State Management
+
+Office Clima uses a modern approach to state management with Zustand's atomic state pattern. This architecture provides several benefits:
+
+### Atomic State Structure
+
+The application utilizes granular state stores to manage different aspects of the application:
+
+- **Teams Store** - Manages team data, selection, and operations
+- **Rooms Store** - Handles room data, filtering by team, and room operations
+- **Devices Store** - Controls device listings, filtering, and management
+- **Readings Store** - Optimized storage for sensor readings with efficient data structures
+
+### Benefits of Our Atomic State Implementation
+
+- **Optimized Rendering** - Components only re-render when their specific data changes
+- **Performance** - Selective component updates reduce unnecessary renders
+- **Persistence** - Data is selectively persisted to sessionStorage for quick recovery
+- **Type Safety** - Full TypeScript integration ensures type correctness
+- **DevTools Support** - Easy debugging with Redux DevTools
+
+### Example of Store Usage
+
+```tsx
+// Creating a store with Zustand
+export const useDevicesStore = create<DevicesState>()(
+  persist(
+    (set, get) => ({
+      devices: [],
+      selectedDeviceId: null,
+      // State and actions
+      setDevices: (devices) => set({ devices }),
+      getDevicesByRoomId: (roomId) => {
+        return get().devices.filter((device) => device.roomId === roomId);
+      },
+    }),
+    {
+      name: "devices-storage",
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (state) => ({
+        devices: state.devices,
+        selectedDeviceId: state.selectedDeviceId,
+      }),
+    }
+  )
+);
+
+// Using the store in components with optimized selectors
+const { devices, selectedDeviceId, setDevices } = useDevicesSelectors(
+  useDevicesStore,
+  (state) => ({
+    devices: state.devices,
+    selectedDeviceId: state.selectedDeviceId,
+    setDevices: state.setDevices,
+  })
+);
+```
