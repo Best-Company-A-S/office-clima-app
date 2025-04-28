@@ -95,32 +95,240 @@ graph TD
     style IoTDevices fill:#e8f5e9,stroke:#333,stroke-width:2px
 ```
 
-## Technical Stack
+## Detailed Database Schema
 
-### Frontend
+```mermaid
+erDiagram
+    Team {
+        string id PK
+        string name
+        string description
+        string ownerId
+        datetime createdAt
+        datetime updatedAt
+    }
 
-- **Framework**: Next.js med App Router
-- **UI Library**: React med Server Components
-- **Styling**: Tailwind CSS med custom theme
-- **Component Library**: Shadcn/UI (bygget på Radix UI)
-- **Data Visualization**: Recharts for interaktive grafer
-- **State Management**: React Context API og Hooks
-- **Forms**: React Hook Form med Zod validation
-- **Authentication**: NextAuth.js integration
+    TeamMember {
+        string id PK
+        string teamId FK
+        string userId
+        datetime createdAt
+        datetime updatedAt
+    }
 
-### Backend
+    TeamInvite {
+        string id PK
+        string teamId FK
+        string code
+        string createdById
+        datetime createdAt
+        datetime updatedAt
+    }
 
-- **API**: Next.js API routes med route handlers
-- **Database ORM**: Prisma ORM for type-safe queries
-- **Database**: PostgreSQL i Docker container
-- **Authentication**: NextAuth.js med multiple providers
-- **Validation**: Zod schema validation
+    Room {
+        string id PK
+        string name
+        string description
+        string type
+        int size
+        int capacity
+        string teamId FK
+        datetime createdAt
+        datetime updatedAt
+    }
 
-### IoT Integration
+    Device {
+        string device_id PK
+        string name
+        string description
+        string model
+        string firmwareVersion
+        string firmwareStatus
+        boolean isPaired
+        datetime lastSeenAt
+        float batteryVoltage
+        int batteryPercentage
+        string roomId FK
+        datetime createdAt
+        datetime updatedAt
+    }
 
-- **Protocols**: HTTP
-- **Device Management**: Custom device registration og management system
-- **OTA Updates**: Over-the-air firmware opdateringer til IoT-enheder
+    DeviceReading {
+        string id PK
+        string deviceId FK
+        float temperature
+        float humidity
+        float batteryVoltage
+        int batteryPercentage
+        datetime timestamp
+        datetime createdAt
+    }
+
+    Survey {
+        string id PK
+        string title
+        boolean active
+        string roomId FK
+        int createdById
+        json questions
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    SurveyResponse {
+        string id PK
+        string surveyId FK
+        int rating
+        string comment
+        json answers
+        datetime createdAt
+    }
+
+    TeamSettings {
+        string id PK
+        string teamId FK
+        string temperatureUnit
+        string humidityUnit
+        float temperatureThreshold
+        float humidityThreshold
+        boolean temperatureAlert
+        boolean humidityAlert
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    Firmware {
+        string id PK
+        string version
+        string modelType
+        string releaseNotes
+        string filename
+        int fileSize
+        string filePath
+        string checksumMD5
+        string status
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    FirmwareDownload {
+        string id PK
+        string deviceId FK
+        string firmwareId FK
+        datetime downloadedAt
+        string status
+    }
+
+    Team ||--o{ TeamMember : "has"
+    Team ||--o{ TeamInvite : "has"
+    Team ||--o{ Room : "has"
+    Team ||--o{ TeamSettings : "has"
+    Room ||--o{ Device : "contains"
+    Room ||--o{ Survey : "has"
+    Device ||--o{ DeviceReading : "generates"
+    Device ||--o{ FirmwareDownload : "has"
+    Survey ||--o{ SurveyResponse : "receives"
+    Firmware ||--o{ FirmwareDownload : "has"
+```
+
+## Climate Assessment Algorithm
+
+Applikationen anvender et sofistikeret tre-lags klimavurderingssystem:
+
+### 1. Basic Climate Assessment
+
+```mermaid
+flowchart TD
+    A[Temperatur & Fugtigheds Aflæsninger] --> B[Basis Vurdering]
+    B --> C{Evaluer Temperatur}
+    C --> |< 20°C| D[For Koldt]
+    C --> |20-24°C| E[Optimal]
+    C --> |> 24°C| F[For Varmt]
+
+    B --> G{Evaluer Fugtighed}
+    G --> |< 40%| H[For Tørt]
+    G --> |40-60%| I[Optimal]
+    G --> |> 60%| J[For Fugtigt]
+
+    D --> K[Beregn Temperatur Afvigelse]
+    E --> K
+    F --> K
+
+    H --> L[Beregn Fugtigheds Afvigelse]
+    I --> L
+    J --> L
+
+    K --> M[Kombineret Klima Score]
+    L --> M
+
+    M --> N{Bestem Kvalitet}
+    N --> |Score < 1| O[Fremragende]
+    N --> |Score < 2.5| P[God]
+    N --> |Score < 4| Q[Moderat]
+    N --> |Score < 6| R[Dårlig]
+    N --> |Score >= 6| S[Meget Dårlig]
+```
+
+### 2. Room-Specific Assessment
+
+For rum med komplet metadata (størrelse, type, kapacitet) udfører systemet en avanceret vurdering:
+
+```mermaid
+flowchart TD
+    A[Rum Data] --> B[Beregn Rum Volumen]
+    B --> C[Bestem Ideelle Parametre]
+
+    D[Rum Type] --> C
+
+    C --> E[Beregn Nødvendig Luftstrøm]
+    C --> F[Beregn CO2 Belastning]
+    C --> G[Indstil Ideelt Temperatur Område]
+    C --> H[Indstil Ideelt Fugtigheds Område]
+
+    I[Aktuelle Aflæsninger] --> J[Sammenlign med Ideelle Områder]
+    G --> J
+    H --> J
+
+    J --> K[Beregn Afvigelses Score]
+
+    L[Plads per Person] --> M[Rumlig Kvalitetsfaktor]
+    M --> K
+
+    K --> N[Generer Klimakvalitets Bedømmelse]
+    N --> O[Giv Anbefalinger]
+```
+
+### 3. Room Comparison Flow
+
+```mermaid
+sequenceDiagram
+    participant Bruger
+    participant Dashboard
+    participant SammenligningsEngine
+    participant API
+    participant Database
+
+    Bruger->>Dashboard: Vælg rum til sammenligning
+    Dashboard->>Dashboard: Opret sammenligningskontekst
+    Dashboard->>SammenligningsEngine: Initialiser sammenligning
+
+    loop For hvert valgt rum
+        SammenligningsEngine->>API: Anmod om klimadata
+        API->>Database: Forespørgsel om historiske aflæsninger
+        Database-->>API: Returner aflæsningsdata
+        API-->>SammenligningsEngine: Returner formateret data
+        SammenligningsEngine->>SammenligningsEngine: Behandl & normaliser data
+    end
+
+    SammenligningsEngine->>SammenligningsEngine: Generer sammenligningsmetrikker
+    SammenligningsEngine->>Dashboard: Render sammenligningsdiagrammer
+    Dashboard->>Bruger: Vis visualisering
+
+    Bruger->>Dashboard: Juster sammenligningsindstillinger
+    Dashboard->>SammenligningsEngine: Opdater parametre
+    SammenligningsEngine->>Dashboard: Opdater visualisering
+    Dashboard->>Bruger: Vis opdateret sammenligning
+```
 
 ## Database Schema
 
@@ -213,6 +421,23 @@ model Survey {
 }
 ```
 
+## Room Types & Recommended Parameters
+
+| Rum Type      | Temperatur Område (°C) | Fugtigheds Område (%) | Anbefalet ACH\* | Primære Overvejelser                |
+| ------------- | ---------------------- | --------------------- | --------------- | ----------------------------------- |
+| Kontor        | 20-22                  | 40-60                 | 8               | Produktivitet, komfort              |
+| Mødelokale    | 20-22                  | 40-60                 | 15              | Koncentration, komfort              |
+| Klasseværelse | 20-24                  | 40-60                 | 12              | Læringsmiljø, årvågenhed            |
+| Konference    | 20-22                  | 40-60                 | 12              | Komfort, fokus                      |
+| Hospital      | 20-22                  | 40-60                 | 15              | Sundhed, infektionskontrol          |
+| Laboratorium  | 20-22                  | 40-60                 | 20              | Præcisionsarbejde, udstyrsbehov     |
+| Gymnastiksal  | 18-22                  | 40-60                 | 20              | Fysisk aktivitet, afkøling          |
+| Restaurant    | 18-22                  | 40-60                 | 20              | Spisekomfort, fødevarekonservering  |
+| Bibliotek     | 20-22                  | 40-60                 | 12              | Materialekonservering, læsekomfort  |
+| Fællesområde  | 20-22                  | 40-60                 | 10              | Social interaktion, generel komfort |
+
+\*ACH = Air Changes per Hour (Luftudskiftninger pr. time)
+
 ## Key Components
 
 ### 1. RoomCard Component
@@ -264,6 +489,56 @@ Håndterer firmware-opdateringer til IoT-enheder:
   currentVersion={selectedDevice.firmwareVersion}
   onUpdateFirmware={handleUpdateFirmware}
 />
+```
+
+## Climate Quality Calculation Example
+
+Her er et uddrag af koden, der beregner klimakvaliteten for et rum:
+
+```typescript
+// Beregn rumklimaparametre baseret på specifikationer
+const calculateRoomClimate = (
+  size: number,
+  capacity: number,
+  roomType: string,
+  height: number = 2.5 // Standard loftshøjde i meter
+): RoomClimateMetrics => {
+  // Rumvolumen i kubikmeter
+  const roomVolume = size * height;
+
+  // Definer ACH (Air Changes per Hour) baseret på rumtype
+  const roomTypeSettings: {
+    [key: string]: {
+      ach: number;
+      idealTemp: [number, number];
+      idealHumidity: [number, number];
+    };
+  } = {
+    office: { ach: 8, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    meeting_room: { ach: 15, idealTemp: [20, 22], idealHumidity: [40, 60] },
+    classroom: { ach: 12, idealTemp: [20, 24], idealHumidity: [40, 60] },
+    // ... andre rumtyper
+  };
+
+  // Brug typemapping eller default til kontor-indstillinger
+  const settings = roomTypeSettings[roomType] || roomTypeSettings.office;
+
+  // Krævet luftstrøm i CFM (Cubic Feet per Minute)
+  const roomVolumeInFt3 = roomVolume * 35.3147; // Konverter m³ til ft³
+  const requiredAirflow = (roomVolumeInFt3 * settings.ach) / 60;
+
+  // CO₂ belastningsberegning baseret på antal personer
+  const co2Load = capacity * 0.005; // CO₂ belastning i m³/min
+
+  return {
+    roomVolume,
+    requiredAirflow,
+    co2Load,
+    idealTempRange: settings.idealTemp,
+    idealHumidityRange: settings.idealHumidity,
+    recommendedACH: settings.ach,
+  };
+};
 ```
 
 ## Installation & Setup
