@@ -146,6 +146,7 @@ model TeamSettings {
   wallpaperUrl String?
   wallpaperBlur Int @default(0)
   kioskMode Boolean @default(false)
+  realtimeEnabled Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

@@ -114,6 +114,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { EmptyTeams } from "@/components/EmptyTeams";
 import { EmptyRooms } from "@/components/EmptyRooms";
+import { useRealtimeUpdates } from "@/hooks/useRealtimeUpdates";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 
@@ -652,6 +653,70 @@ const Dashboard = () => {
   }>({});
   const lastComparisonFetchTimeRef = useRef<number>(0);
 
+  // Real-time updates state
+  const [realtimeEnabled, setRealtimeEnabled] = useState(false);
+  const [realtimeLoading, setRealtimeLoading] = useState(true);
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
+
+  // Detect kiosk mode from query param
+  const isKioskMode = searchParams.get("kiosk") === "true";
+  const teamId = searchParams.get("teamId");
+
+  // Fetch initial realtimeEnabled state from team settings
+  useEffect(() => {
+    if (!teamId) return;
+    setRealtimeLoading(true);
+    axios
+      .get(`/api/teams/${teamId}/settings`)
+      .then((res) => {
+        const enabled = res.data.realtimeEnabled ?? false;
+        setRealtimeEnabled(isKioskMode ? true : enabled);
+      })
+      .finally(() => setRealtimeLoading(false));
+  }, [teamId, isKioskMode]);
+
+  // When toggling, persist to backend (unless in kiosk mode)
+  const toggleRealtime = async () => {
+    if (!teamId || isKioskMode) return;
+    const newValue = !realtimeEnabled;
+    setRealtimeEnabled(newValue);
+    setRealtimeLoading(true);
+    try {
+      await axios.patch(`/api/teams/${teamId}/settings`, {
+        realtimeEnabled: newValue,
+      });
+    } finally {
+      setRealtimeLoading(false);
+    }
+  };
+
+  // Initialize real-time updates hook
+  const {
+    isPolling,
+    startPolling,
+    stopPolling,
+    refreshData,
+    isRevalidating,
+    lastRevalidation,
+  } = useRealtimeUpdates({
+    enabled: realtimeEnabled,
+    pollingInterval: 30000,
+    showToast: true,
+  });
+
+  // Update lastUpdateTime when revalidation happens
+  useEffect(() => {
+    if (lastRevalidation) {
+      setLastUpdateTime(lastRevalidation);
+    }
+  }, [lastRevalidation]);
+
+  // Manually trigger data refresh
+  const handleManualRefresh = async () => {
+    await refreshData();
+    await fetchData();
+  };
+
   // Wrap the fetchData function in useCallback to prevent it from triggering renders
   const fetchData = useCallback(async () => {
     // Debounce fetches - don't allow more than one fetch every 10 seconds
@@ -1014,6 +1079,9 @@ const Dashboard = () => {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
+
+    // Signal that we've updated
+    setLastUpdateTime(new Date());
   }, [searchParams]); // Keep only searchParams as a dependency
 
   // Modify the useEffect to use the memoized fetchData function
@@ -1472,7 +1540,6 @@ const Dashboard = () => {
   }
 
   // Get teamId for empty state check
-  const teamId = searchParams.get("teamId");
   console.log("Dashboard render - teamId:", teamId, "allRooms:", allRooms);
 
   // Show EmptyTeams if there's no teamId selected
@@ -1497,52 +1564,406 @@ const Dashboard = () => {
 
   // Regular dashboard view (when we have rooms)
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Monitor and analyze your climate data
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          {!isComparing ? (
-            <>
-              {/* Layout customization buttons */}
-              {editLayoutMode ? (
-                <>
-                  <div className="flex items-center border rounded-md pl-2 pr-1 h-9">
-                    <Input
-                      className="h-7 border-0 px-1 text-sm w-40"
-                      placeholder="Layout name"
-                      value={newLayoutName}
-                      onChange={(e) => setNewLayoutName(e.target.value)}
-                    />
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9"
-                    onClick={() => setEditLayoutMode(false)}
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="h-9"
-                    onClick={() => saveCurrentLayout(false)}
-                    disabled={isSavingLayout}
-                  >
-                    {isSavingLayout ? (
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4 mr-1" />
+    <>
+      {!teamId ? (
+        <EmptyTeams />
+      ) : !roomId ? (
+        <EmptyRooms teamId={teamId} />
+      ) : (
+        <div className="flex flex-col h-full w-full">
+          <div className="flex flex-col-reverse sm:flex-row justify-between items-start sm:items-center gap-4 mb-4 mt-2">
+            <div className="flex flex-col">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Dashboard
+              </h1>
+              <div className="flex items-center mt-1 text-muted-foreground text-sm">
+                {!isComparing && roomData ? (
+                  <>
+                    {roomData.name}
+                    {lastUpdateTime && (
+                      <span className="ml-2 text-xs">
+                        • Last update: {format(lastUpdateTime, "h:mm:ss a")}
+                      </span>
                     )}
-                    Save Layout
-                  </Button>
+                  </>
+                ) : (
+                  <>
+                    {isComparing
+                      ? `Comparing ${selectedItems.length} rooms`
+                      : "All rooms"}
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 w-full sm:w-auto">
+              {/* Real-time updates toggle */}
+              <TooltipProvider>
+                <UITooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center mr-2 bg-muted p-2 rounded-md">
+                      <Switch
+                        id="realtime-toggle"
+                        checked={realtimeEnabled}
+                        onCheckedChange={toggleRealtime}
+                        className="mr-2"
+                        disabled={realtimeLoading || isKioskMode}
+                      />
+                      <Label
+                        htmlFor="realtime-toggle"
+                        className="text-sm cursor-pointer"
+                      >
+                        Real-time
+                      </Label>
+                      {isRevalidating && (
+                        <Loader2 className="h-3 w-3 ml-2 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {realtimeEnabled
+                      ? "Disable automatic data updates"
+                      : "Enable automatic data updates every 30 seconds"}
+                  </TooltipContent>
+                </UITooltip>
+              </TooltipProvider>
+
+              {/* Refresh button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleManualRefresh}
+                disabled={isRevalidating}
+                className="h-9"
+              >
+                {isRevalidating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowLeftRight className="h-4 w-4" />
+                )}
+                <span className="ml-2 hidden sm:inline">Refresh</span>
+              </Button>
+
+              {/* Consolidated layout controls in dropdown menu */}
+              {!isComparing ? (
+                <>
+                  {/* Layout Controls Dropdown */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 flex-shrink-0"
+                      >
+                        <Layout className="h-4 w-4 mr-2" />
+                        <span className="hidden sm:inline">
+                          Dashboard Layout
+                        </span>
+                        <span className="inline sm:hidden">Layout</span>
+                        <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-72 p-3">
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <h4 className="font-medium text-sm">
+                            Current Layout
+                          </h4>
+                          {editLayoutMode ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              onClick={() => setEditLayoutMode(false)}
+                            >
+                              <X className="h-3.5 w-3.5 mr-1" />
+                              Exit Edit Mode
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              onClick={() => setEditLayoutMode(true)}
+                            >
+                              <Edit className="h-3.5 w-3.5 mr-1" />
+                              Edit
+                            </Button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 p-2 bg-primary/5 rounded-md">
+                          <Layout className="h-5 w-5 text-primary/70" />
+                          <span className="text-sm font-medium">
+                            {currentLayout?.name || "Default Layout"}
+                          </span>
+                        </div>
+
+                        {editLayoutMode && (
+                          <div className="pt-2 border-t">
+                            <div className="flex flex-col space-y-2">
+                              <Label
+                                htmlFor="layout-name"
+                                className="text-xs font-medium"
+                              >
+                                Layout Name
+                              </Label>
+                              <div className="flex gap-2">
+                                <Input
+                                  id="layout-name"
+                                  value={newLayoutNameInput}
+                                  onChange={(e) =>
+                                    setNewLayoutNameInput(e.target.value)
+                                  }
+                                  className="h-8 text-sm"
+                                />
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => saveCurrentLayout(false)}
+                                  disabled={isSavingLayout}
+                                >
+                                  {isSavingLayout ? (
+                                    <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                                  ) : (
+                                    <Save className="h-3.5 w-3.5 mr-1" />
+                                  )}
+                                  Save
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="pt-2 border-t">
+                          <Label className="text-xs font-medium">
+                            Available Layouts
+                          </Label>
+                          <Command className="mt-1">
+                            <CommandInput
+                              placeholder="Search layouts..."
+                              className="h-8 text-sm"
+                            />
+                            <CommandEmpty>No layouts found.</CommandEmpty>
+                            <CommandGroup className="max-h-40 overflow-auto">
+                              {availableLayouts.map((layout) => (
+                                <CommandItem
+                                  key={layout.id}
+                                  onSelect={() => {
+                                    setCurrentLayout(layout);
+                                  }}
+                                  className="flex items-center justify-between"
+                                >
+                                  <div className="flex items-center">
+                                    <Layout className="h-3.5 w-3.5 mr-2" />
+                                    <span className="text-sm">
+                                      {layout.name}
+                                    </span>
+                                  </div>
+                                  {layout.id === currentLayout?.id && (
+                                    <CheckIcon className="h-3.5 w-3.5 ml-auto" />
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </Command>
+                        </div>
+
+                        <div className="pt-2 border-t">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full h-8 text-sm"
+                            onClick={() => setIsLayoutSettingsOpen(true)}
+                          >
+                            <Settings className="h-3.5 w-3.5 mr-1" />
+                            Layout Settings
+                          </Button>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+
+                  {/* Room comparison button - kept separate for better visibility */}
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 flex-shrink-0"
+                      >
+                        <BarChart3 className="h-4 w-4 mr-2" />
+                        <span>Compare Rooms</span>
+                        <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent className="w-[90vw] sm:w-[440px] p-0">
+                      <SheetHeader className="p-6 pb-2">
+                        <SheetTitle>Compare Room Climate</SheetTitle>
+                        <SheetDescription>
+                          Select rooms to compare their climate data
+                        </SheetDescription>
+                      </SheetHeader>
+
+                      <div className="px-6 py-4 border-t">
+                        <h3 className="text-sm font-medium mb-3">
+                          Select Rooms
+                          {allRooms.length === 0 && (
+                            <span className="text-xs font-normal text-muted-foreground ml-2">
+                              (No rooms available)
+                            </span>
+                          )}
+                        </h3>
+
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                          {allRooms.length > 0 ? (
+                            allRooms.map((room) => (
+                              <div
+                                key={room.id}
+                                className={`
+                                flex items-center justify-between p-3 rounded-md transition-colors
+                                ${
+                                  selectedItems.includes(room.id)
+                                    ? "bg-primary/10 border-primary/30"
+                                    : "hover:bg-muted"
+                                }
+                                border cursor-pointer
+                              `}
+                                onClick={() => {
+                                  setSelectedItems((prev) =>
+                                    prev.includes(room.id)
+                                      ? prev.filter((id) => id !== room.id)
+                                      : [...prev, room.id]
+                                  );
+                                }}
+                              >
+                                <div className="flex items-center">
+                                  <div
+                                    className={`w-4 h-4 mr-3 flex items-center justify-center rounded-sm border ${
+                                      selectedItems.includes(room.id)
+                                        ? "bg-primary border-primary"
+                                        : "border-input"
+                                    }`}
+                                  >
+                                    {selectedItems.includes(room.id) && (
+                                      <CheckIcon className="h-3 w-3 text-primary-foreground" />
+                                    )}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="font-medium text-sm">
+                                      {room.name}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {room.type
+                                        ? room.type.replace("_", " ")
+                                        : "Room"}{" "}
+                                      · {room._count?.devices || 0} device
+                                      {room._count?.devices !== 1 ? "s" : ""}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
+                              <BarChart className="h-10 w-10 mb-2 opacity-20" />
+                              <p className="text-sm">
+                                No rooms available in this team
+                              </p>
+                              <p className="text-xs mt-1">
+                                You need to create rooms first
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="px-6 py-4 border-t">
+                        <h3 className="text-sm font-medium mb-3">
+                          Display Options
+                        </h3>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="show-humidity" className="text-sm">
+                              Include humidity data
+                            </Label>
+                            <Switch
+                              id="show-humidity"
+                              checked={comparisonOptions.includeHumidity}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  includeHumidity: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="smooth-curves" className="text-sm">
+                              Smooth curves
+                            </Label>
+                            <Switch
+                              id="smooth-curves"
+                              checked={comparisonOptions.smoothCurves}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  smoothCurves: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="normalize-scales"
+                              className="text-sm"
+                            >
+                              Normalize scales
+                            </Label>
+                            <Switch
+                              id="normalize-scales"
+                              checked={comparisonOptions.normalizeScales}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  normalizeScales: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <SheetFooter className="px-6 py-4 border-t">
+                        <SheetClose asChild>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            className="w-full"
+                            disabled={selectedItems.length === 0}
+                          >
+                            Cancel
+                          </Button>
+                        </SheetClose>
+                        <SheetClose asChild>
+                          <Button
+                            className="w-full"
+                            size="sm"
+                            disabled={selectedItems.length === 0}
+                            onClick={() => {
+                              if (selectedItems.length > 0) {
+                                setIsComparing(true);
+                              }
+                            }}
+                          >
+                            Compare {selectedItems.length} Room
+                            {selectedItems.length !== 1 ? "s" : ""}
+                          </Button>
+                        </SheetClose>
+                      </SheetFooter>
+                    </SheetContent>
+                  </Sheet>
                 </>
               ) : (
                 <>
@@ -1550,1060 +1971,850 @@ const Dashboard = () => {
                     variant="outline"
                     size="sm"
                     className="h-9"
-                    onClick={() => setIsLayoutSettingsOpen(true)}
+                    onClick={() => setIsComparing(false)}
                   >
-                    <Settings className="h-4 w-4 mr-1" />
-                    <span className="sr-only md:not-sr-only">
-                      Layout Settings
-                    </span>
+                    <X className="h-4 w-4 mr-1" />
+                    Stop Comparing
                   </Button>
-                  {availableLayouts.length > 1 && (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-9 flex-shrink-0"
-                        >
-                          <Layout className="h-4 w-4 mr-2" />
-                          <span>{currentLayout?.name || "Select Layout"}</span>
-                          <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="p-0" align="end">
-                        <Command>
-                          <CommandInput placeholder="Search layouts..." />
-                          <CommandEmpty>No layouts found.</CommandEmpty>
-                          <CommandGroup>
-                            {availableLayouts.map((layout) => (
-                              <CommandItem
-                                key={layout.id}
-                                onSelect={() => {
-                                  setCurrentLayout(layout);
-                                }}
-                              >
-                                <Layout className="h-4 w-4 mr-2" />
-                                <span>{layout.name}</span>
-                                {layout.id === currentLayout?.id && (
-                                  <CheckIcon className="h-4 w-4 ml-auto" />
-                                )}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9"
-                    onClick={() => setEditLayoutMode(true)}
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    <span className="sr-only md:not-sr-only">
-                      Customize Layout
-                    </span>
-                  </Button>
+
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-9">
+                        <Settings className="h-4 w-4 mr-1" />
+                        <span className="sr-only md:not-sr-only">Settings</span>
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="right" className="w-[300px]">
+                      <SheetHeader>
+                        <SheetTitle>Comparison Settings</SheetTitle>
+                        <SheetDescription>
+                          Customize how the comparison charts are displayed
+                        </SheetDescription>
+                      </SheetHeader>
+                      <div className="py-4 space-y-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="show-legend" className="text-sm">
+                              Show legend
+                            </Label>
+                            <Switch
+                              id="show-legend"
+                              checked={comparisonOptions.showLegend}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  showLegend: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="show-grid" className="text-sm">
+                              Show grid
+                            </Label>
+                            <Switch
+                              id="show-grid"
+                              checked={comparisonOptions.showGrid}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  showGrid: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="include-humidity"
+                              className="text-sm"
+                            >
+                              Include humidity data
+                            </Label>
+                            <Switch
+                              id="include-humidity"
+                              checked={comparisonOptions.includeHumidity}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  includeHumidity: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="smooth-curves" className="text-sm">
+                              Smooth curves
+                            </Label>
+                            <Switch
+                              id="smooth-curves"
+                              checked={comparisonOptions.smoothCurves}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  smoothCurves: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label
+                              htmlFor="normalize-scales"
+                              className="text-sm"
+                            >
+                              Normalize scales
+                            </Label>
+                            <Switch
+                              id="normalize-scales"
+                              checked={comparisonOptions.normalizeScales}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  normalizeScales: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor="show-average" className="text-sm">
+                              Show average line
+                            </Label>
+                            <Switch
+                              id="show-average"
+                              checked={comparisonOptions.showAverage}
+                              onCheckedChange={(checked) =>
+                                setComparisonOptions((prev) => ({
+                                  ...prev,
+                                  showAverage: checked,
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </SheetContent>
+                  </Sheet>
                 </>
               )}
+            </div>
+          </div>
 
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 flex-shrink-0"
-                  >
-                    <BarChart3 className="h-4 w-4 mr-2" />
-                    <span>Compare Rooms</span>
-                    <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent className="w-[90vw] sm:w-[440px] p-0">
-                  <SheetHeader className="p-6 pb-2">
-                    <SheetTitle>Compare Room Climate</SheetTitle>
-                    <SheetDescription>
-                      Select rooms to compare their climate data
-                    </SheetDescription>
-                  </SheetHeader>
+          {editLayoutMode && (
+            <div className="bg-muted/40 border rounded-lg p-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-medium">Customize Dashboard Layout</h3>
+                <div className="text-sm text-muted-foreground">
+                  Drag and resize the cards to customize your dashboard
+                </div>
+              </div>
+            </div>
+          )}
 
-                  <div className="px-6 py-4 border-t">
-                    <h3 className="text-sm font-medium mb-3">
-                      Select Rooms
-                      {allRooms.length === 0 && (
-                        <span className="text-xs font-normal text-muted-foreground ml-2">
-                          (No rooms available)
-                        </span>
-                      )}
-                    </h3>
+          {isComparing && (
+            <div className="bg-muted/40 border rounded-lg p-3 flex items-center justify-between mb-4">
+              <div className="flex items-center">
+                <span className="text-sm font-medium mr-3">
+                  Comparing Rooms:
+                </span>
+                <div className="flex flex-wrap gap-1 max-w-[500px]">
+                  {selectedItems.map((id) => {
+                    const room = allRooms.find((r) => r.id === id);
+                    if (!room) return null;
 
-                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                      {allRooms.length > 0 ? (
-                        allRooms.map((room) => (
-                          <div
-                            key={room.id}
-                            className={`
-                            flex items-center justify-between p-3 rounded-md transition-colors
-                            ${
-                              selectedItems.includes(room.id)
-                                ? "bg-primary/10 border-primary/30"
-                                : "hover:bg-muted"
-                            }
-                            border cursor-pointer
-                          `}
-                            onClick={() => {
-                              setSelectedItems((prev) =>
-                                prev.includes(room.id)
-                                  ? prev.filter((id) => id !== room.id)
-                                  : [...prev, room.id]
-                              );
-                            }}
-                          >
-                            <div className="flex items-center">
-                              <div
-                                className={`w-4 h-4 mr-3 flex items-center justify-center rounded-sm border ${
-                                  selectedItems.includes(room.id)
-                                    ? "bg-primary border-primary"
-                                    : "border-input"
-                                }`}
+                    const compData = comparisonData[id];
+                    const color = compData?.color || "#888";
+
+                    return (
+                      <Badge
+                        key={id}
+                        variant="outline"
+                        className="gap-1 py-1 pl-2 pr-1"
+                        style={{ borderColor: color }}
+                      >
+                        <div
+                          className="w-2 h-2 rounded-full mr-1"
+                          style={{ backgroundColor: color }}
+                        ></div>
+                        {room.name}
+                        <TooltipProvider>
+                          <UITooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                className="h-4 w-4 rounded-full inline-flex items-center justify-center hover:bg-muted ml-1"
+                                onClick={() =>
+                                  setSelectedItems((prev) =>
+                                    prev.filter((i) => i !== id)
+                                  )
+                                }
                               >
-                                {selectedItems.includes(room.id) && (
-                                  <CheckIcon className="h-3 w-3 text-primary-foreground" />
-                                )}
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="font-medium text-sm">
-                                  {room.name}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {room.type
-                                    ? room.type.replace("_", " ")
-                                    : "Room"}{" "}
-                                  · {room._count?.devices || 0} device
-                                  {room._count?.devices !== 1 ? "s" : ""}
-                                </span>
-                              </div>
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Remove from comparison</p>
+                            </TooltipContent>
+                          </UITooltip>
+                        </TooltipProvider>
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isComparing && Object.keys(comparisonData).length > 0 && (
+            <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">
+              <details>
+                <summary className="cursor-pointer hover:text-foreground">
+                  Debug information
+                </summary>
+                <div className="mt-1 space-y-1">
+                  <div>
+                    Cache entries: {getComparisonDebugInfo().cacheEntries}
+                  </div>
+                  <div>Throttle: {getComparisonDebugInfo().throttleStatus}</div>
+                  <div>
+                    Requests in progress:{" "}
+                    {getComparisonDebugInfo().requestsInProgress}
+                  </div>
+                  <div className="mt-2">
+                    {getComparisonDebugInfo().cacheInfo.map((info) => (
+                      <div key={info.roomName} className="flex justify-between">
+                        <span>{info.roomName}</span>
+                        <span
+                          className={
+                            info.isValid ? "text-green-500" : "text-yellow-500"
+                          }
+                        >
+                          {info.dataPoints} points, {info.age}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            </div>
+          )}
+
+          {/* Layout Settings Sheet */}
+          <Sheet
+            open={isLayoutSettingsOpen}
+            onOpenChange={setIsLayoutSettingsOpen}
+          >
+            <SheetContent className="sm:max-w-md">
+              <SheetHeader>
+                <SheetTitle>Dashboard Layouts</SheetTitle>
+                <SheetDescription>
+                  Manage your custom dashboard layouts
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="p-6 space-y-6">
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium mb-1">
+                    Available Layouts
+                  </h3>
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                    {availableLayouts.map((layout) => (
+                      <div
+                        key={layout.id}
+                        className={`
+                          border rounded-md p-3 transition-colors
+                          ${
+                            layout.id === currentLayout?.id
+                              ? "bg-primary/10 border-primary/30"
+                              : "hover:bg-muted"
+                          }
+                        `}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            {layout.isDefault && (
+                              <Badge variant="outline" className="text-xs">
+                                Default
+                              </Badge>
+                            )}
+                            <span className="font-medium truncate max-w-[180px]">
+                              {layout.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <TooltipProvider>
+                              <UITooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => {
+                                      setLayoutToPreview(layout);
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Preview</TooltipContent>
+                              </UITooltip>
+                            </TooltipProvider>
+
+                            <TooltipProvider>
+                              <UITooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => {
+                                      setLayoutToRename(layout);
+                                      setNewLayoutNameInput(layout.name);
+                                    }}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Rename</TooltipContent>
+                              </UITooltip>
+                            </TooltipProvider>
+
+                            {!layout.isDefault && (
+                              <TooltipProvider>
+                                <UITooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-destructive/70 hover:text-destructive"
+                                      onClick={() => setLayoutToDelete(layout)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Delete</TooltipContent>
+                                </UITooltip>
+                              </TooltipProvider>
+                            )}
+
+                            {!layout.isDefault && (
+                              <TooltipProvider>
+                                <UITooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={async () => {
+                                        if (!teamId) return;
+                                        try {
+                                          await axios.put(
+                                            `/api/teams/${teamId}/layouts/default/${layout.id}`
+                                          );
+
+                                          // Update layouts in state
+                                          setAvailableLayouts((prev) =>
+                                            prev.map((l) => ({
+                                              ...l,
+                                              isDefault: l.id === layout.id,
+                                            }))
+                                          );
+                                        } catch (error) {
+                                          console.error(
+                                            "Failed to set default layout:",
+                                            error
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      <Star className="h-4 w-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Set as default
+                                  </TooltipContent>
+                                </UITooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="w-full h-24 bg-muted/50 rounded-md overflow-hidden relative border border-border/50">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="grid grid-cols-12 gap-1 w-full h-full p-2">
+                              {/* Simple visual representation of the layout */}
+                              {layout.layout?.lg?.map((item) => (
+                                <div
+                                  key={item.i}
+                                  className="bg-primary/20 rounded-sm border border-primary/30"
+                                  style={{
+                                    gridColumn: `span ${item.w} / span ${item.w}`,
+                                    gridRow: `span ${Math.min(
+                                      item.h,
+                                      4
+                                    )} / span ${Math.min(item.h, 4)}`,
+                                  }}
+                                ></div>
+                              ))}
                             </div>
                           </div>
-                        ))
-                      ) : (
-                        <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
-                          <BarChart className="h-10 w-10 mb-2 opacity-20" />
-                          <p className="text-sm">
-                            No rooms available in this team
-                          </p>
-                          <p className="text-xs mt-1">
-                            You need to create rooms first
-                          </p>
+                        </div>
+
+                        {layout.id === currentLayout?.id ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full mt-2"
+                            disabled
+                          >
+                            <CheckIcon className="h-4 w-4 mr-2" />
+                            Current Layout
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full mt-2"
+                            onClick={() => {
+                              setCurrentLayout(layout);
+                              setIsLayoutSettingsOpen(false);
+                            }}
+                          >
+                            Apply Layout
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t pt-4">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      // Create a new layout object based on the default but with a unique ID
+                      const newLayout = {
+                        ...defaultLayout,
+                        id: "new-" + Date.now(), // Temporary ID until saved
+                        name: "New Layout",
+                      };
+                      // Set the new layout as current
+                      setCurrentLayout(newLayout);
+                      // Reset layout name input
+                      setNewLayoutName("New Layout");
+                      // Close the settings sheet
+                      setIsLayoutSettingsOpen(false);
+                      // Enable edit mode
+                      setEditLayoutMode(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create New Layout
+                  </Button>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          {/* Layout Preview Dialog */}
+          <Dialog
+            open={layoutToPreview !== null}
+            onOpenChange={(open) => !open && setLayoutToPreview(null)}
+          >
+            <DialogContent className="sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Preview: {layoutToPreview?.name}</DialogTitle>
+                <DialogDescription>
+                  Preview this layout before applying it to your dashboard
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="w-full bg-muted/20 rounded-md overflow-hidden h-[300px] relative border">
+                <div className="grid grid-cols-12 gap-1 w-full h-full p-2">
+                  {layoutToPreview?.layout?.lg?.map((item) => (
+                    <div
+                      key={item.i}
+                      className="bg-primary/10 rounded border border-primary/20 flex items-center justify-center text-xs"
+                      style={{
+                        gridColumn: `span ${item.w} / span ${item.w}`,
+                        gridRow: `span ${Math.min(item.h, 6)} / span ${Math.min(
+                          item.h,
+                          6
+                        )}`,
+                      }}
+                    >
+                      {item.i === "temperature-trend" && (
+                        <Thermometer className="h-5 w-5 mr-1 text-primary/70" />
+                      )}
+                      {item.i === "climate-quality" && (
+                        <Activity className="h-5 w-5 mr-1 text-primary/70" />
+                      )}
+                      {item.i === "device-readings" && (
+                        <BarChart className="h-5 w-5 mr-1 text-primary/70" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setLayoutToPreview(null)}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={applyPreviewedLayout}>Apply Layout</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Rename Layout Dialog */}
+          <Dialog
+            open={layoutToRename !== null}
+            onOpenChange={(open) => !open && setLayoutToRename(null)}
+          >
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Rename Layout</DialogTitle>
+                <DialogDescription>
+                  Enter a new name for the layout
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="py-4">
+                <Label htmlFor="layout-name" className="text-sm">
+                  Layout Name
+                </Label>
+                <Input
+                  id="layout-name"
+                  value={newLayoutNameInput}
+                  onChange={(e) => setNewLayoutNameInput(e.target.value)}
+                  placeholder="Enter layout name"
+                  className="mt-1"
+                />
+              </div>
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setLayoutToRename(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleRenameLayout}
+                  disabled={isRenamingLayout || !newLayoutNameInput.trim()}
+                >
+                  {isRenamingLayout ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : null}
+                  Rename
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Delete Layout Confirmation */}
+          <AlertDialog
+            open={layoutToDelete !== null}
+            onOpenChange={(open) => !open && setLayoutToDelete(null)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Layout</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete the layout &quot;
+                  {layoutToDelete?.name}&quot;? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setLayoutToDelete(null)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDeleteLayout}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={isDeletingLayout}
+                >
+                  {isDeletingLayout ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : null}
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {!isComparing && currentLayout && (
+            <ResponsiveGridLayout
+              className="layout"
+              layouts={currentLayout.layout}
+              breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+              cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+              rowHeight={40}
+              isDraggable={editLayoutMode}
+              isResizable={editLayoutMode}
+              onLayoutChange={handleLayoutChange}
+            >
+              <div key="temperature-trend">
+                <Card className="bg-card/80 backdrop-blur-sm h-full">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg font-medium">
+                        Temperature & Humidity Trends
+                      </CardTitle>
+                      <TooltipProvider>
+                        <UITooltip>
+                          <TooltipTrigger>
+                            <Info className="h-4 w-4 text-muted-foreground" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>24-hour trend for temperature and humidity</p>
+                          </TooltipContent>
+                        </UITooltip>
+                      </TooltipProvider>
+                    </div>
+                    <CardDescription>
+                      24-hour temperature and humidity trend
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[calc(100%-98px)]">
+                    {dailyTrendData.length > 0 ? (
+                      <ChartContainer
+                        config={dailyTrendConfig}
+                        className="h-full w-full"
+                      >
+                        <AreaChart data={dailyTrendData} accessibilityLayer>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke="var(--border)"
+                            opacity={0.3}
+                          />
+                          <XAxis
+                            dataKey="time"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 11 }}
+                          />
+                          <YAxis
+                            yAxisId="left"
+                            orientation="left"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 11 }}
+                          />
+                          <YAxis
+                            yAxisId="right"
+                            orientation="right"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 11 }}
+                          />
+                          <ChartTooltip content={<ChartTooltipContent />} />
+                          <ChartLegend content={<ChartLegendContent />} />
+                          <defs>
+                            <linearGradient
+                              id="colorTemp"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="5%"
+                                stopColor="var(--color-temperature)"
+                                stopOpacity={0.5}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor="var(--color-temperature)"
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+                            <linearGradient
+                              id="colorHumid"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="5%"
+                                stopColor="var(--color-humidity)"
+                                stopOpacity={0.5}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor="var(--color-humidity)"
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <Area
+                            yAxisId="left"
+                            type="monotone"
+                            dataKey="temperature"
+                            stroke="var(--color-temperature)"
+                            fillOpacity={1}
+                            fill="url(#colorTemp)"
+                            isAnimationActive={true}
+                          />
+                          <Area
+                            yAxisId="right"
+                            type="monotone"
+                            dataKey="humidity"
+                            stroke="var(--color-humidity)"
+                            fillOpacity={1}
+                            fill="url(#colorHumid)"
+                            isAnimationActive={true}
+                          />
+                        </AreaChart>
+                      </ChartContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-muted-foreground">
+                        <p>
+                          No temperature data available for the last 24 hours
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div key="climate-quality">
+                <Card className="bg-card/80 backdrop-blur-sm h-full">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg font-medium">
+                        Climate Quality
+                      </CardTitle>
+                      <Activity className="h-5 w-5 text-primary" />
+                    </div>
+                    <CardDescription>
+                      Current room climate assessment
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[calc(100%-98px)]">
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div className="text-7xl mb-2">{comfortData.emoji}</div>
+                      <h3
+                        className={`text-2xl font-bold ${comfortData.color} mb-1`}
+                      >
+                        {comfortData.message}
+                      </h3>
+
+                      {/* Current Temperature and Humidity */}
+                      <div className="flex justify-center gap-6 mb-2 text-sm">
+                        <div className="flex items-center">
+                          <Thermometer className="h-4 w-4 mr-1 text-rose-400" />
+                          <span>
+                            {dailyTrendData.length > 0
+                              ? `${dailyTrendData[
+                                  dailyTrendData.length - 1
+                                ].temperature.toFixed(1)}°${
+                                  settings.temperatureUnit
+                                }`
+                              : `--°${settings.temperatureUnit}`}
+                          </span>
+                        </div>
+                        <div className="flex items-center">
+                          <Droplet className="h-4 w-4 mr-1 text-blue-400" />
+                          <span>
+                            {dailyTrendData.length > 0
+                              ? `${dailyTrendData[
+                                  dailyTrendData.length - 1
+                                ].humidity.toFixed(0)}${settings.humidityUnit}`
+                              : `--${settings.humidityUnit}`}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-sm text-muted-foreground max-w-xs mb-2">
+                        {comfortData.status === "excellent" &&
+                          "Perfect temperature and humidity for this room type!"}
+                        {comfortData.status === "good" &&
+                          "Very comfortable climate conditions for this room."}
+                        {comfortData.status === "moderate" &&
+                          "Climate is acceptable but could be improved."}
+                        {comfortData.status === "poor" &&
+                          "Climate conditions need adjustment for comfort."}
+                        {comfortData.status === "bad" &&
+                          "Climate conditions are uncomfortable and need immediate attention."}
+                      </p>
+
+                      {comfortData.details && (
+                        <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t border-border pt-2 mt-1 w-full">
+                          <div className="flex justify-between">
+                            <span>Ideal temperature:</span>
+                            <span className="font-medium">
+                              {comfortData.details.idealTempRange?.[0]}-
+                              {comfortData.details.idealTempRange?.[1]}°
+                              {settings.temperatureUnit}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Room type:</span>
+                            <span className="font-medium capitalize">
+                              {roomData?.type?.replace("_", " ") || "Unknown"}
+                            </span>
+                          </div>
+                          {roomData?.size && roomData?.capacity && (
+                            <div className="flex justify-between">
+                              <span>Space per person:</span>
+                              <span className="font-medium">
+                                {(roomData.size / roomData.capacity).toFixed(1)}{" "}
+                                m²
+                              </span>
+                            </div>
+                          )}
+                          {comfortData.details.requiredAirflow && (
+                            <div className="flex justify-between">
+                              <span>Required airflow:</span>
+                              <span className="font-medium">
+                                {comfortData.details.requiredAirflow} CFM
+                              </span>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
-                  </div>
+                  </CardContent>
+                </Card>
+              </div>
 
-                  <div className="px-6 py-4 border-t">
-                    <h3 className="text-sm font-medium mb-3">
-                      Display Options
-                    </h3>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="show-humidity" className="text-sm">
-                          Include humidity data
-                        </Label>
-                        <Switch
-                          id="show-humidity"
-                          checked={comparisonOptions.includeHumidity}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              includeHumidity: checked,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="smooth-curves" className="text-sm">
-                          Smooth curves
-                        </Label>
-                        <Switch
-                          id="smooth-curves"
-                          checked={comparisonOptions.smoothCurves}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              smoothCurves: checked,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="normalize-scales" className="text-sm">
-                          Normalize scales
-                        </Label>
-                        <Switch
-                          id="normalize-scales"
-                          checked={comparisonOptions.normalizeScales}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              normalizeScales: checked,
-                            }))
-                          }
-                        />
-                      </div>
+              <div key="device-readings">
+                <Card className="bg-card/80 backdrop-blur-sm h-full">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg font-medium">
+                        Device Readings
+                      </CardTitle>
+                      <Thermometer className="h-5 w-5 text-primary" />
                     </div>
-                  </div>
-
-                  <SheetFooter className="px-6 py-4 border-t">
-                    <SheetClose asChild>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="w-full"
-                        disabled={selectedItems.length === 0}
-                      >
-                        Cancel
-                      </Button>
-                    </SheetClose>
-                    <SheetClose asChild>
-                      <Button
-                        className="w-full"
-                        size="sm"
-                        disabled={selectedItems.length === 0}
-                        onClick={() => {
-                          if (selectedItems.length > 0) {
-                            setIsComparing(true);
-                          }
-                        }}
-                      >
-                        Compare {selectedItems.length} Room
-                        {selectedItems.length !== 1 ? "s" : ""}
-                      </Button>
-                    </SheetClose>
-                  </SheetFooter>
-                </SheetContent>
-              </Sheet>
-            </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9"
-                onClick={() => setIsComparing(false)}
-              >
-                <X className="h-4 w-4 mr-1" />
-                Stop Comparing
-              </Button>
-
-              <Sheet>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-9">
-                    <Settings className="h-4 w-4 mr-1" />
-                    <span className="sr-only md:not-sr-only">Settings</span>
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-[300px]">
-                  <SheetHeader>
-                    <SheetTitle>Comparison Settings</SheetTitle>
-                    <SheetDescription>
-                      Customize how the comparison charts are displayed
-                    </SheetDescription>
-                  </SheetHeader>
-                  <div className="py-4 space-y-4">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="show-legend" className="text-sm">
-                          Show legend
-                        </Label>
-                        <Switch
-                          id="show-legend"
-                          checked={comparisonOptions.showLegend}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              showLegend: checked,
-                            }))
-                          }
-                        />
+                    <CardDescription>
+                      Detailed device readings over time
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="h-[calc(100%-98px)]">
+                    {roomId ? (
+                      <DeviceReadingsChart
+                        roomId={roomId}
+                        initialPeriod="day"
+                      />
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-muted-foreground">
+                        <p>Select a room to view device readings</p>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="show-grid" className="text-sm">
-                          Show grid
-                        </Label>
-                        <Switch
-                          id="show-grid"
-                          checked={comparisonOptions.showGrid}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              showGrid: checked,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="include-humidity" className="text-sm">
-                          Include humidity data
-                        </Label>
-                        <Switch
-                          id="include-humidity"
-                          checked={comparisonOptions.includeHumidity}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              includeHumidity: checked,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="smooth-curves" className="text-sm">
-                          Smooth curves
-                        </Label>
-                        <Switch
-                          id="smooth-curves"
-                          checked={comparisonOptions.smoothCurves}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              smoothCurves: checked,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="normalize-scales" className="text-sm">
-                          Normalize scales
-                        </Label>
-                        <Switch
-                          id="normalize-scales"
-                          checked={comparisonOptions.normalizeScales}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              normalizeScales: checked,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="show-average" className="text-sm">
-                          Show average line
-                        </Label>
-                        <Switch
-                          id="show-average"
-                          checked={comparisonOptions.showAverage}
-                          onCheckedChange={(checked) =>
-                            setComparisonOptions((prev) => ({
-                              ...prev,
-                              showAverage: checked,
-                            }))
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </SheetContent>
-              </Sheet>
-            </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </ResponsiveGridLayout>
           )}
         </div>
-      </div>
-
-      {editLayoutMode && (
-        <div className="bg-muted/40 border rounded-lg p-3">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-medium">Customize Dashboard Layout</h3>
-            <div className="text-sm text-muted-foreground">
-              Drag and resize the cards to customize your dashboard
-            </div>
-          </div>
-        </div>
       )}
-
-      {isComparing && (
-        <div className="bg-muted/40 border rounded-lg p-3 flex items-center justify-between mb-4">
-          <div className="flex items-center">
-            <span className="text-sm font-medium mr-3">Comparing Rooms:</span>
-            <div className="flex flex-wrap gap-1 max-w-[500px]">
-              {selectedItems.map((id) => {
-                const room = allRooms.find((r) => r.id === id);
-                if (!room) return null;
-
-                const compData = comparisonData[id];
-                const color = compData?.color || "#888";
-
-                return (
-                  <Badge
-                    key={id}
-                    variant="outline"
-                    className="gap-1 py-1 pl-2 pr-1"
-                    style={{ borderColor: color }}
-                  >
-                    <div
-                      className="w-2 h-2 rounded-full mr-1"
-                      style={{ backgroundColor: color }}
-                    ></div>
-                    {room.name}
-                    <TooltipProvider>
-                      <UITooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            className="h-4 w-4 rounded-full inline-flex items-center justify-center hover:bg-muted ml-1"
-                            onClick={() =>
-                              setSelectedItems((prev) =>
-                                prev.filter((i) => i !== id)
-                              )
-                            }
-                          >
-                            <X className="h-2.5 w-2.5" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Remove from comparison</p>
-                        </TooltipContent>
-                      </UITooltip>
-                    </TooltipProvider>
-                  </Badge>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isComparing && Object.keys(comparisonData).length > 0 && (
-        <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">
-          <details>
-            <summary className="cursor-pointer hover:text-foreground">
-              Debug information
-            </summary>
-            <div className="mt-1 space-y-1">
-              <div>Cache entries: {getComparisonDebugInfo().cacheEntries}</div>
-              <div>Throttle: {getComparisonDebugInfo().throttleStatus}</div>
-              <div>
-                Requests in progress:{" "}
-                {getComparisonDebugInfo().requestsInProgress}
-              </div>
-              <div className="mt-2">
-                {getComparisonDebugInfo().cacheInfo.map((info) => (
-                  <div key={info.roomName} className="flex justify-between">
-                    <span>{info.roomName}</span>
-                    <span
-                      className={
-                        info.isValid ? "text-green-500" : "text-yellow-500"
-                      }
-                    >
-                      {info.dataPoints} points, {info.age}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </details>
-        </div>
-      )}
-
-      {/* Layout Settings Sheet */}
-      <Sheet open={isLayoutSettingsOpen} onOpenChange={setIsLayoutSettingsOpen}>
-        <SheetContent className="sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>Dashboard Layouts</SheetTitle>
-            <SheetDescription>
-              Manage your custom dashboard layouts
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="p-6 space-y-6">
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium mb-1">Available Layouts</h3>
-              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                {availableLayouts.map((layout) => (
-                  <div
-                    key={layout.id}
-                    className={`
-                      border rounded-md p-3 transition-colors
-                      ${
-                        layout.id === currentLayout?.id
-                          ? "bg-primary/10 border-primary/30"
-                          : "hover:bg-muted"
-                      }
-                    `}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        {layout.isDefault && (
-                          <Badge variant="outline" className="text-xs">
-                            Default
-                          </Badge>
-                        )}
-                        <span className="font-medium truncate max-w-[180px]">
-                          {layout.name}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <TooltipProvider>
-                          <UITooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => {
-                                  setLayoutToPreview(layout);
-                                }}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Preview</TooltipContent>
-                          </UITooltip>
-                        </TooltipProvider>
-
-                        <TooltipProvider>
-                          <UITooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => {
-                                  setLayoutToRename(layout);
-                                  setNewLayoutNameInput(layout.name);
-                                }}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Rename</TooltipContent>
-                          </UITooltip>
-                        </TooltipProvider>
-
-                        {!layout.isDefault && (
-                          <TooltipProvider>
-                            <UITooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-destructive/70 hover:text-destructive"
-                                  onClick={() => setLayoutToDelete(layout)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Delete</TooltipContent>
-                            </UITooltip>
-                          </TooltipProvider>
-                        )}
-
-                        {!layout.isDefault && (
-                          <TooltipProvider>
-                            <UITooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={async () => {
-                                    const teamId = searchParams.get("teamId");
-                                    if (!teamId) return;
-                                    try {
-                                      await axios.put(
-                                        `/api/teams/${teamId}/layouts/default/${layout.id}`
-                                      );
-
-                                      // Update layouts in state
-                                      setAvailableLayouts((prev) =>
-                                        prev.map((l) => ({
-                                          ...l,
-                                          isDefault: l.id === layout.id,
-                                        }))
-                                      );
-                                    } catch (error) {
-                                      console.error(
-                                        "Failed to set default layout:",
-                                        error
-                                      );
-                                    }
-                                  }}
-                                >
-                                  <Star className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Set as default</TooltipContent>
-                            </UITooltip>
-                          </TooltipProvider>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="w-full h-24 bg-muted/50 rounded-md overflow-hidden relative border border-border/50">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="grid grid-cols-12 gap-1 w-full h-full p-2">
-                          {/* Simple visual representation of the layout */}
-                          {layout.layout?.lg?.map((item) => (
-                            <div
-                              key={item.i}
-                              className="bg-primary/20 rounded-sm border border-primary/30"
-                              style={{
-                                gridColumn: `span ${item.w} / span ${item.w}`,
-                                gridRow: `span ${Math.min(
-                                  item.h,
-                                  4
-                                )} / span ${Math.min(item.h, 4)}`,
-                              }}
-                            ></div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {layout.id === currentLayout?.id ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full mt-2"
-                        disabled
-                      >
-                        <CheckIcon className="h-4 w-4 mr-2" />
-                        Current Layout
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full mt-2"
-                        onClick={() => {
-                          setCurrentLayout(layout);
-                          setIsLayoutSettingsOpen(false);
-                        }}
-                      >
-                        Apply Layout
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-t pt-4">
-              <Button
-                variant="default"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  // Create a new layout object based on the default but with a unique ID
-                  const newLayout = {
-                    ...defaultLayout,
-                    id: "new-" + Date.now(), // Temporary ID until saved
-                    name: "New Layout",
-                  };
-                  // Set the new layout as current
-                  setCurrentLayout(newLayout);
-                  // Reset layout name input
-                  setNewLayoutName("New Layout");
-                  // Close the settings sheet
-                  setIsLayoutSettingsOpen(false);
-                  // Enable edit mode
-                  setEditLayoutMode(true);
-                }}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create New Layout
-              </Button>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {/* Layout Preview Dialog */}
-      <Dialog
-        open={layoutToPreview !== null}
-        onOpenChange={(open) => !open && setLayoutToPreview(null)}
-      >
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Preview: {layoutToPreview?.name}</DialogTitle>
-            <DialogDescription>
-              Preview this layout before applying it to your dashboard
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="w-full bg-muted/20 rounded-md overflow-hidden h-[300px] relative border">
-            <div className="grid grid-cols-12 gap-1 w-full h-full p-2">
-              {layoutToPreview?.layout?.lg?.map((item) => (
-                <div
-                  key={item.i}
-                  className="bg-primary/10 rounded border border-primary/20 flex items-center justify-center text-xs"
-                  style={{
-                    gridColumn: `span ${item.w} / span ${item.w}`,
-                    gridRow: `span ${Math.min(item.h, 6)} / span ${Math.min(
-                      item.h,
-                      6
-                    )}`,
-                  }}
-                >
-                  {item.i === "temperature-trend" && (
-                    <Thermometer className="h-5 w-5 mr-1 text-primary/70" />
-                  )}
-                  {item.i === "climate-quality" && (
-                    <Activity className="h-5 w-5 mr-1 text-primary/70" />
-                  )}
-                  {item.i === "device-readings" && (
-                    <BarChart className="h-5 w-5 mr-1 text-primary/70" />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLayoutToPreview(null)}>
-              Cancel
-            </Button>
-            <Button onClick={applyPreviewedLayout}>Apply Layout</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Rename Layout Dialog */}
-      <Dialog
-        open={layoutToRename !== null}
-        onOpenChange={(open) => !open && setLayoutToRename(null)}
-      >
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Rename Layout</DialogTitle>
-            <DialogDescription>
-              Enter a new name for the layout
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-4">
-            <Label htmlFor="layout-name" className="text-sm">
-              Layout Name
-            </Label>
-            <Input
-              id="layout-name"
-              value={newLayoutNameInput}
-              onChange={(e) => setNewLayoutNameInput(e.target.value)}
-              placeholder="Enter layout name"
-              className="mt-1"
-            />
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setLayoutToRename(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleRenameLayout}
-              disabled={isRenamingLayout || !newLayoutNameInput.trim()}
-            >
-              {isRenamingLayout ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Rename
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Layout Confirmation */}
-      <AlertDialog
-        open={layoutToDelete !== null}
-        onOpenChange={(open) => !open && setLayoutToDelete(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Layout</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete the layout &quot;
-              {layoutToDelete?.name}&quot;? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setLayoutToDelete(null)}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteLayout}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={isDeletingLayout}
-            >
-              {isDeletingLayout ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {!isComparing && currentLayout && (
-        <ResponsiveGridLayout
-          className="layout"
-          layouts={currentLayout.layout}
-          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-          cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-          rowHeight={40}
-          isDraggable={editLayoutMode}
-          isResizable={editLayoutMode}
-          onLayoutChange={handleLayoutChange}
-        >
-          <div key="temperature-trend">
-            <Card className="bg-card/80 backdrop-blur-sm h-full">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-medium">
-                    Temperature & Humidity Trends
-                  </CardTitle>
-                  <TooltipProvider>
-                    <UITooltip>
-                      <TooltipTrigger>
-                        <Info className="h-4 w-4 text-muted-foreground" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>24-hour trend for temperature and humidity</p>
-                      </TooltipContent>
-                    </UITooltip>
-                  </TooltipProvider>
-                </div>
-                <CardDescription>
-                  24-hour temperature and humidity trend
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="h-[calc(100%-98px)]">
-                {dailyTrendData.length > 0 ? (
-                  <ChartContainer
-                    config={dailyTrendConfig}
-                    className="h-full w-full"
-                  >
-                    <AreaChart data={dailyTrendData} accessibilityLayer>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        vertical={false}
-                        stroke="var(--border)"
-                        opacity={0.3}
-                      />
-                      <XAxis
-                        dataKey="time"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 11 }}
-                      />
-                      <YAxis
-                        yAxisId="left"
-                        orientation="left"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 11 }}
-                      />
-                      <YAxis
-                        yAxisId="right"
-                        orientation="right"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 11 }}
-                      />
-                      <ChartTooltip content={<ChartTooltipContent />} />
-                      <ChartLegend content={<ChartLegendContent />} />
-                      <defs>
-                        <linearGradient
-                          id="colorTemp"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="5%"
-                            stopColor="var(--color-temperature)"
-                            stopOpacity={0.5}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor="var(--color-temperature)"
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                        <linearGradient
-                          id="colorHumid"
-                          x1="0"
-                          y1="0"
-                          x2="0"
-                          y2="1"
-                        >
-                          <stop
-                            offset="5%"
-                            stopColor="var(--color-humidity)"
-                            stopOpacity={0.5}
-                          />
-                          <stop
-                            offset="95%"
-                            stopColor="var(--color-humidity)"
-                            stopOpacity={0}
-                          />
-                        </linearGradient>
-                      </defs>
-                      <Area
-                        yAxisId="left"
-                        type="monotone"
-                        dataKey="temperature"
-                        stroke="var(--color-temperature)"
-                        fillOpacity={1}
-                        fill="url(#colorTemp)"
-                        isAnimationActive={true}
-                      />
-                      <Area
-                        yAxisId="right"
-                        type="monotone"
-                        dataKey="humidity"
-                        stroke="var(--color-humidity)"
-                        fillOpacity={1}
-                        fill="url(#colorHumid)"
-                        isAnimationActive={true}
-                      />
-                    </AreaChart>
-                  </ChartContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    <p>No temperature data available for the last 24 hours</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div key="climate-quality">
-            <Card className="bg-card/80 backdrop-blur-sm h-full">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-medium">
-                    Climate Quality
-                  </CardTitle>
-                  <Activity className="h-5 w-5 text-primary" />
-                </div>
-                <CardDescription>
-                  Current room climate assessment
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="h-[calc(100%-98px)]">
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="text-7xl mb-2">{comfortData.emoji}</div>
-                  <h3
-                    className={`text-2xl font-bold ${comfortData.color} mb-1`}
-                  >
-                    {comfortData.message}
-                  </h3>
-
-                  {/* Current Temperature and Humidity */}
-                  <div className="flex justify-center gap-6 mb-2 text-sm">
-                    <div className="flex items-center">
-                      <Thermometer className="h-4 w-4 mr-1 text-rose-400" />
-                      <span>
-                        {dailyTrendData.length > 0
-                          ? `${dailyTrendData[
-                              dailyTrendData.length - 1
-                            ].temperature.toFixed(1)}°${
-                              settings.temperatureUnit
-                            }`
-                          : `--°${settings.temperatureUnit}`}
-                      </span>
-                    </div>
-                    <div className="flex items-center">
-                      <Droplet className="h-4 w-4 mr-1 text-blue-400" />
-                      <span>
-                        {dailyTrendData.length > 0
-                          ? `${dailyTrendData[
-                              dailyTrendData.length - 1
-                            ].humidity.toFixed(0)}${settings.humidityUnit}`
-                          : `--${settings.humidityUnit}`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-sm text-muted-foreground max-w-xs mb-2">
-                    {comfortData.status === "excellent" &&
-                      "Perfect temperature and humidity for this room type!"}
-                    {comfortData.status === "good" &&
-                      "Very comfortable climate conditions for this room."}
-                    {comfortData.status === "moderate" &&
-                      "Climate is acceptable but could be improved."}
-                    {comfortData.status === "poor" &&
-                      "Climate conditions need adjustment for comfort."}
-                    {comfortData.status === "bad" &&
-                      "Climate conditions are uncomfortable and need immediate attention."}
-                  </p>
-
-                  {comfortData.details && (
-                    <div className="text-xs text-muted-foreground flex flex-col gap-1 border-t border-border pt-2 mt-1 w-full">
-                      <div className="flex justify-between">
-                        <span>Ideal temperature:</span>
-                        <span className="font-medium">
-                          {comfortData.details.idealTempRange?.[0]}-
-                          {comfortData.details.idealTempRange?.[1]}°
-                          {settings.temperatureUnit}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Room type:</span>
-                        <span className="font-medium capitalize">
-                          {roomData?.type?.replace("_", " ") || "Unknown"}
-                        </span>
-                      </div>
-                      {roomData?.size && roomData?.capacity && (
-                        <div className="flex justify-between">
-                          <span>Space per person:</span>
-                          <span className="font-medium">
-                            {(roomData.size / roomData.capacity).toFixed(1)} m²
-                          </span>
-                        </div>
-                      )}
-                      {comfortData.details.requiredAirflow && (
-                        <div className="flex justify-between">
-                          <span>Required airflow:</span>
-                          <span className="font-medium">
-                            {comfortData.details.requiredAirflow} CFM
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div key="device-readings">
-            <Card className="bg-card/80 backdrop-blur-sm h-full">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-medium">
-                    Device Readings
-                  </CardTitle>
-                  <Thermometer className="h-5 w-5 text-primary" />
-                </div>
-                <CardDescription>
-                  Detailed device readings over time
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="h-[calc(100%-98px)]">
-                {roomId ? (
-                  <DeviceReadingsChart roomId={roomId} initialPeriod="day" />
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    <p>Select a room to view device readings</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </ResponsiveGridLayout>
-      )}
-    </div>
+    </>
   );
 };
 
