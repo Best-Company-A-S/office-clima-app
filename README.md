@@ -17,47 +17,42 @@
 
 ## Project Overview
 
-Office Clima is a Next.js application designed to monitor and manage indoor climate conditions across different offices and rooms. The app allows teams to track temperature and humidity data from IoT devices, visualize climate trends, and make data-driven decisions to improve workplace comfort.
+Office Clima er en Next.js applikation designet til at overvåge og administrere indeklima-forhold på tværs af forskellige kontorer og rum. Appen giver teams mulighed for at spore temperatur- og fugtighedsdata fra IoT-enheder, visualisere klimatendenser og træffe datadrevne beslutninger for at forbedre komforten på arbejdspladsen.
 
-The system combines real-time IoT sensor data with sophisticated climate quality analysis algorithms to provide actionable insights about indoor climate conditions.
+Systemet kombinerer realtids-IoT-sensordata med sofistikerede algoritmer til analyse af klimakvalitet for at give handlingsorienterede indsigter om indeklimaforhold.
 
-<div align="center">
-  <img src="docs/images/clima-app-overview.png" alt="Clima App Overview" width="80%">
-</div>
+## Projektstatus
+
+Vi udvikler dette projekt som en del af uddannelsesforløb, hvor vi dækker en række faglige målpinde. Du kan se vores [projektstatus i forhold til målpindene her](projekt-status.md).
 
 ## Key Features
 
 ### 🏢 Team & Organization Management
 
-- **Team Creation & Management**: Create and manage multiple teams within an organization
-- **Role-Based Access Control**: Define admin, manager, and member roles with appropriate permissions
-- **Team Invitations**: Send email invitations or generate invitation codes
-- **Team Settings**: Configure team preferences for temperature units (°C/°F) and humidity display
+- **Team Oprettelse & Administration**: Opret og administrer flere teams inden for en organisation
+- **Rollebaseret adgangskontrol**: Definer admin-, manager- og medlemsroller med passende tilladelser
+- **Team invitationer**: Send e-mailinvitationer eller generer invitationskoder
+- **Team indstillinger**: Konfigurer teamindstillinger for temperaturenheder (°C/°F) og fugtighedsvisning
 
 ### 🚪 Room Management
 
-- **Room Organization**: Create, edit, and delete rooms within team spaces
-- **Room Categorization**: Categorize rooms by types (office, meeting room, classroom, etc.)
-- **Room Specifications**: Define room size, capacity, and special properties
-- **Spatial Visualization**: View rooms on floor plans (coming soon)
-- **Status Indicators**: At-a-glance climate quality indicators for each room
+- **Rum organisering**: Opret, rediger og slet rum inden for teamområder
+- **Rum kategorisering**: Kategoriser rum efter typer (kontor, mødelokale, klasseværelse osv.)
+- **Rum specifikationer**: Definer rumstørrelse, kapacitet og særlige egenskaber
+- **Status indikatorer**: Indikatorer for klimakvalitet på et øjeblik for hvert rum
 
 ### 📱 Device Integration
 
-- **Device Pairing**: Simple QR-code based device pairing system
-- **Multi-Protocol Support**: Compatible with various IoT communication protocols
-- **Auto-Discovery**: Network discovery of compatible devices (with supported models)
-- **Device Health Monitoring**: Track device status, battery levels, and connection quality
-- **Calibration Tools**: Advanced sensor calibration capabilities for accurate readings
+- **Enhedsparring**: Simpelt QR-kodebaseret system til parring af enheder
+- **Enhedssundhedsovervågning**: Spor enhedsstatus, batteriniveauer og forbindelseskvalitet
+- **Firmware opdateringer**: Håndter firmware-opdateringer til IoT-enheder
 
 ### 📊 Dashboard & Analytics
 
-- **Interactive Climate Visualization**: Rich, interactive charts showing temperature and humidity trends
-- **Room Comparison**: Advanced comparison tools for analyzing multiple rooms simultaneously
-- **Climate Quality Assessment**: Sophisticated algorithms for evaluating indoor climate quality
-- **Real-time Monitoring**: Live updates of temperature and humidity conditions
-- **Data Export**: Export climate data in various formats (CSV, JSON, Excel)
-- **Custom Reports**: Generate custom reports with selected metrics and time periods
+- **Interaktiv klimavisualisering**: Rige, interaktive diagrammer, der viser temperatur- og fugtighedstendenser
+- **Rum sammenligning**: Avancerede sammenligningsværktøjer til analyse af flere rum samtidigt
+- **Klimakvalitetsvurdering**: Sofistikerede algoritmer til evaluering af indeklimakvalitet
+- **Realtidsovervågning**: Live opdateringer af temperatur- og fugtighedsforhold
 
 ## System Architecture
 
@@ -104,428 +99,201 @@ graph TD
 
 ### Frontend
 
-- **Framework**: Next.js 15 with App Router
-- **UI Library**: React 19 with Server Components
-- **Styling**: Tailwind CSS with custom theme
-- **Component Library**: Shadcn/UI (built on Radix UI)
-- **Data Visualization**: Recharts for interactive graphs
-- **State Management**: React Context API and Hooks
-- **Forms**: React Hook Form with Zod validation
+- **Framework**: Next.js med App Router
+- **UI Library**: React med Server Components
+- **Styling**: Tailwind CSS med custom theme
+- **Component Library**: Shadcn/UI (bygget på Radix UI)
+- **Data Visualization**: Recharts for interaktive grafer
+- **State Management**: React Context API og Hooks
+- **Forms**: React Hook Form med Zod validation
 - **Authentication**: NextAuth.js integration
 
 ### Backend
 
-- **API**: Next.js API routes with route handlers
+- **API**: Next.js API routes med route handlers
 - **Database ORM**: Prisma ORM for type-safe queries
-- **Database**: PostgreSQL for reliable data storage
-- **Authentication**: NextAuth.js with multiple providers
+- **Database**: PostgreSQL i Docker container
+- **Authentication**: NextAuth.js med multiple providers
 - **Validation**: Zod schema validation
-- **API Documentation**: OpenAPI specification (coming soon)
 
 ### IoT Integration
 
-- **Protocols**: HTTP, MQTT, WebSockets
-- **Data Processing**: Real-time and batch processing
-- **Device Management**: Custom device registration and management system
+- **Protocols**: HTTP
+- **Device Management**: Custom device registration og management system
+- **OTA Updates**: Over-the-air firmware opdateringer til IoT-enheder
 
-## Detailed Database Schema
+## Database Schema
 
-```mermaid
-erDiagram
-    User {
-        string id PK
-        string name
-        string email
-        string image
-        datetime emailVerified
-        datetime createdAt
-        datetime updatedAt
-    }
+Vores aktuelle database schema implementerer følgende datamodeller:
 
-    Account {
-        string id PK
-        string userId FK
-        string type
-        string provider
-        string providerAccountId
-        string refresh_token
-        string access_token
-        int expires_at
-        string token_type
-        string scope
-        string id_token
-        string session_state
-    }
+```prisma
+model Team {
+  id String @id @default(uuid())
+  name String
+  description String?
+  ownerId Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members TeamMember[]
+  invites TeamInvite[]
+  rooms Room[]
+  settings TeamSettings[]
+  dashboardLayouts DashboardLayout[]
+}
 
-    Session {
-        string id PK
-        string sessionToken
-        string userId FK
-        datetime expires
-    }
+model Room {
+  id String @id @default(uuid())
+  name String
+  description String?
+  type String? // office, classroom, meeting room, etc.
+  size Int? // size in square meters/feet
+  capacity Int? // max number of people
+  teamId String
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-    Team {
-        string id PK
-        string name
-        string description
-        string logo
-        string temperatureUnit
-        string humidityUnit
-        datetime createdAt
-        datetime updatedAt
-    }
+  devices Device[]
+  surveys Survey[]
+}
 
-    TeamMember {
-        string id PK
-        string userId FK
-        string teamId FK
-        string role
-        datetime joinedAt
-    }
+model Device {
+  device_id String @id
+  name String?
+  description String?
+  model String?
+  firmwareVersion String?
+  firmwareStatus String? // "UP_TO_DATE", "UPDATING", "UPDATE_FAILED"
+  isPaired Boolean @default(false)
+  lastSeenAt DateTime?
+  lastUpdatedAt DateTime?
+  batteryVoltage Float?
+  batteryPercentage Int?
+  batteryTimeRemaining Int?
+  autoUpdate Boolean @default(false) // Whether to auto-update from GitHub releases
+  roomId String?
+  room Room? @relation(fields: [roomId], references: [id])
+  pairedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  readings DeviceReading[]
+  firmwareDownloads FirmwareDownload[]
+}
 
-    Room {
-        string id PK
-        string name
-        string description
-        string type
-        float size
-        int capacity
-        float ceilingHeight
-        string teamId FK
-        datetime createdAt
-        datetime updatedAt
-    }
+model DeviceReading {
+  id String @id @default(uuid())
+  deviceId String
+  device Device @relation(fields: [deviceId], references: [device_id], onDelete: Cascade)
+  temperature Float
+  humidity Float
+  batteryVoltage Float?
+  batteryPercentage Int?
+  batteryTimeRemaining Int?
+  timestamp DateTime
+  createdAt DateTime @default(now())
 
-    Device {
-        string id PK
-        string name
-        string deviceId
-        string model
-        string firmware
-        string status
-        string batteryLevel
-        string connectionQuality
-        string lastSeen
-        string roomId FK
-        datetime createdAt
-        datetime updatedAt
-    }
+  @@index([deviceId])
+  @@index([timestamp])
+}
 
-    DeviceReading {
-        string id PK
-        float temperature
-        float humidity
-        float co2
-        float voc
-        float pm25
-        datetime createdAt
-        string deviceId FK
-    }
+model Survey {
+  id          String           @id @default(uuid())
+  title       String
+  active      Boolean          @default(true)
+  roomId      String
+  room        Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  createdById Int
+  responses   SurveyResponse[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  questions   Json             @default("[{\"id\":\"comfort\",\"text\":\"How do you feel about the indoor climate?\"},{\"id\":\"suggestions\",\"text\":\"Do you have any suggestions for improvement?\"}]")
 
-    DashboardLayout {
-        string id PK
-        string teamId FK
-        json layout
-        boolean isDefault
-        string name
-        datetime createdAt
-        datetime updatedAt
-    }
-
-    User ||--o{ Account : "has"
-    User ||--o{ Session : "has"
-    User ||--o{ TeamMember : "has"
-    Team ||--o{ TeamMember : "has"
-    Team ||--o{ Room : "has"
-    Team ||--o{ DashboardLayout : "has"
-    Room ||--o{ Device : "has"
-    Device ||--o{ DeviceReading : "generates"
+  @@index([roomId])
+  @@index([createdById])
+}
 ```
 
-## Climate Assessment Algorithm
+## Key Components
 
-The application employs a sophisticated three-tier climate assessment system:
+### 1. RoomCard Component
 
-### 1. Basic Climate Assessment
+Viser et kort med oplysninger om et rum og dets klimaforhold:
 
-```mermaid
-flowchart TD
-    A[Temperature & Humidity Readings] --> B[Basic Assessment]
-    B --> C{Evaluate Temperature}
-    C --> |< 20°C| D[Too Cold]
-    C --> |20-24°C| E[Optimal]
-    C --> |> 24°C| F[Too Hot]
-
-    B --> G{Evaluate Humidity}
-    G --> |< 40%| H[Too Dry]
-    G --> |40-60%| I[Optimal]
-    G --> |> 60%| J[Too Humid]
-
-    D --> K[Calculate Temperature Deviation]
-    E --> K
-    F --> K
-
-    H --> L[Calculate Humidity Deviation]
-    I --> L
-    J --> L
-
-    K --> M[Combined Climate Score]
-    L --> M
-
-    M --> N{Determine Quality}
-    N --> |Score < 1| O[Excellent]
-    N --> |Score < 2.5| P[Good]
-    N --> |Score < 4| Q[Moderate]
-    N --> |Score < 6| R[Poor]
-    N --> |Score >= 6| S[Bad]
+```tsx
+<RoomCard
+  key={room.id}
+  room={room}
+  latestReading={readings[room.id]}
+  onViewDetails={handleViewDetails}
+  teamSettings={teamSettings}
+/>
 ```
 
-### 2. Room-Specific Assessment
+### 2. DeviceList Component
 
-For rooms with complete metadata (size, type, capacity), the system performs an advanced assessment:
+Viser en liste af enheder og deres status:
 
-```mermaid
-flowchart TD
-    A[Room Data] --> B[Calculate Room Volume]
-    B --> C[Determine Ideal Parameters]
-
-    D[Room Type] --> C
-
-    C --> E[Calculate Required Airflow]
-    C --> F[Calculate CO2 Load]
-    C --> G[Set Ideal Temperature Range]
-    C --> H[Set Ideal Humidity Range]
-
-    I[Current Readings] --> J[Compare to Ideal Ranges]
-    G --> J
-    H --> J
-
-    J --> K[Calculate Deviation Score]
-
-    L[Space per Person] --> M[Spatial Quality Factor]
-    M --> K
-
-    K --> N[Generate Climate Quality Rating]
-    N --> O[Provide Recommendations]
+```tsx
+<DeviceList
+  devices={devices}
+  onDeviceSelect={handleDeviceSelect}
+  onPairDevice={handlePairDevice}
+  onEditDevice={handleEditDevice}
+/>
 ```
 
-### 3. Room Comparison Flow
+### 3. DeviceReadingsChart Component
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Dashboard
-    participant ComparisonEngine
-    participant API
-    participant Database
+Visualiserer temperatur- og fugtighedsdata over tid:
 
-    User->>Dashboard: Select rooms to compare
-    Dashboard->>Dashboard: Create comparison context
-    Dashboard->>ComparisonEngine: Initialize comparison
-
-    loop For each selected room
-        ComparisonEngine->>API: Request climate data
-        API->>Database: Query historical readings
-        Database-->>API: Return readings data
-        API-->>ComparisonEngine: Return formatted data
-        ComparisonEngine->>ComparisonEngine: Process & normalize data
-    end
-
-    ComparisonEngine->>ComparisonEngine: Generate comparison metrics
-    ComparisonEngine->>Dashboard: Render comparison charts
-    Dashboard->>User: Display visualization
-
-    User->>Dashboard: Adjust comparison settings
-    Dashboard->>ComparisonEngine: Update parameters
-    ComparisonEngine->>Dashboard: Refresh visualization
-    Dashboard->>User: Show updated comparison
+```tsx
+<DeviceReadingsChart
+  deviceId={selectedDevice.id}
+  timePeriod={timePeriod}
+  height={400}
+/>
 ```
 
-## API Endpoints Reference
+### 4. DeviceFirmwareManager Component
 
-### Authentication
+Håndterer firmware-opdateringer til IoT-enheder:
 
-| Endpoint                  | Method  | Description                          | Authentication |
-| ------------------------- | ------- | ------------------------------------ | -------------- |
-| `/api/auth/[...nextauth]` | Various | NextAuth.js authentication endpoints | None           |
-| `/api/auth/register`      | POST    | Register new user                    | None           |
-| `/api/auth/session`       | GET     | Get current session                  | None           |
-
-### Teams
-
-| Endpoint                      | Method | Description                     | Authentication         |
-| ----------------------------- | ------ | ------------------------------- | ---------------------- |
-| `/api/teams`                  | GET    | List all teams for current user | Required               |
-| `/api/teams`                  | POST   | Create a new team               | Required               |
-| `/api/teams/:teamId`          | GET    | Get team details                | Required & Team Member |
-| `/api/teams/:teamId`          | PUT    | Update team details             | Required & Team Admin  |
-| `/api/teams/:teamId`          | DELETE | Delete a team                   | Required & Team Admin  |
-| `/api/teams/invite`           | POST   | Generate invite code            | Required & Team Admin  |
-| `/api/teams/join`             | POST   | Join team with invite code      | Required               |
-| `/api/teams/:teamId/members`  | GET    | List team members               | Required & Team Member |
-| `/api/teams/:teamId/settings` | GET    | Get team settings               | Required & Team Member |
-| `/api/teams/:teamId/settings` | PUT    | Update team settings            | Required & Team Admin  |
-
-### Rooms
-
-| Endpoint             | Method | Description                   | Authentication         |
-| -------------------- | ------ | ----------------------------- | ---------------------- |
-| `/api/rooms`         | GET    | List rooms (filter by teamId) | Required & Team Member |
-| `/api/rooms`         | POST   | Create a new room             | Required & Team Admin  |
-| `/api/rooms/:roomId` | GET    | Get room details              | Required & Team Member |
-| `/api/rooms/:roomId` | PUT    | Update room details           | Required & Team Admin  |
-| `/api/rooms/:roomId` | DELETE | Delete a room                 | Required & Team Admin  |
-
-### Devices
-
-| Endpoint                       | Method | Description                           | Authentication         |
-| ------------------------------ | ------ | ------------------------------------- | ---------------------- |
-| `/api/devices`                 | GET    | List devices (filter by roomId)       | Required & Team Member |
-| `/api/devices`                 | POST   | Register a new device                 | Required & Team Admin  |
-| `/api/devices/:deviceId`       | GET    | Get device details                    | Required & Team Member |
-| `/api/devices/:deviceId`       | PUT    | Update device details                 | Required & Team Admin  |
-| `/api/devices/:deviceId`       | DELETE | Delete a device                       | Required & Team Admin  |
-| `/api/devices/pair`            | POST   | Pair a device with a room             | Required & Team Admin  |
-| `/api/devices/check/:deviceId` | GET    | Check device status                   | Required & Team Member |
-| `/api/devices/readings`        | GET    | Get device readings (various filters) | Required & Team Member |
-| `/api/devices/readings`        | POST   | Submit device reading                 | Device Auth / API Key  |
-| `/api/devices/readings/stats`  | GET    | Get aggregated reading statistics     | Required & Team Member |
-
-## Dashboard Features
-
-<div align="center">
-  <img src="docs/images/dashboard-overview.png" alt="Dashboard Overview" width="80%">
-</div>
-
-### Customizable Dashboard Layout
-
-The dashboard provides a fully customizable layout system allowing users to:
-
-- **Resize Dashboard Cards**: Adjust the size of monitoring and visualization components
-- **Drag & Drop Interface**: Intuitively arrange cards in the preferred order
-- **Multiple Layouts**: Create and save multiple dashboard layouts for different purposes
-- **Team-Specific Layouts**: Each team can have their own personalized dashboard configuration
-- **Layout Persistence**: Dashboard arrangements are automatically saved to the database
-
-### Interactive Climate Visualization
-
-The dashboard provides rich, interactive visualizations of climate data:
-
-```typescript
-// Example component structure for climate visualization
-const ClimateChart: React.FC<{
-  roomId: string;
-  period: "day" | "week" | "month";
-}> = ({ roomId, period }) => {
-  const [chartData, setChartData] = useState<ChartData[]>([]);
-
-  useEffect(() => {
-    // Fetch climate data for the specified room and period
-    const fetchData = async () => {
-      const response = await fetch(
-        `/api/devices/readings/stats?roomId=${roomId}&period=${period}`
-      );
-      const data = await response.json();
-      setChartData(data.timeSeriesData);
-    };
-
-    fetchData();
-  }, [roomId, period]);
-
-  return (
-    <ChartContainer config={chartConfig} className="h-[300px] w-full">
-      <AreaChart data={chartData} accessibilityLayer>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="time" />
-        <YAxis yAxisId="left" orientation="left" />
-        <YAxis yAxisId="right" orientation="right" />
-        <Tooltip content={<CustomTooltip />} />
-        <Legend content={<CustomLegend />} />
-        <Area
-          yAxisId="left"
-          type="monotone"
-          dataKey="temperature"
-          stroke="var(--color-temperature)"
-          fill="url(#colorTemp)"
-        />
-        <Area
-          yAxisId="right"
-          type="monotone"
-          dataKey="humidity"
-          stroke="var(--color-humidity)"
-          fill="url(#colorHumid)"
-        />
-      </AreaChart>
-    </ChartContainer>
-  );
-};
+```tsx
+<DeviceFirmwareManager
+  deviceId={selectedDevice.id}
+  currentVersion={selectedDevice.firmwareVersion}
+  onUpdateFirmware={handleUpdateFirmware}
+/>
 ```
-
-### Room Comparison System
-
-The room comparison system allows users to:
-
-1. **Select Multiple Rooms**: Choose rooms to compare from the team's room list
-2. **Customize Visualization**: Configure display options for comparison charts
-3. **Analyze Differences**: Identify patterns and anomalies between rooms
-4. **Export Comparison Data**: Save or share comparison results
-
-### Climate Quality Assessment
-
-The dashboard provides detailed climate quality assessment with:
-
-1. **Quality Indicators**: Visual indicators of climate quality (Excellent to Bad)
-2. **Parameter Breakdown**: Individual assessment of temperature and humidity
-3. **Ideal Range Display**: Show ideal ranges for the specific room type
-4. **Recommendations**: Actionable suggestions for improving climate quality
-
-## Room Types & Recommended Parameters
-
-| Room Type    | Temperature Range (°C) | Humidity Range (%) | Recommended ACH\* | Primary Considerations                 |
-| ------------ | ---------------------- | ------------------ | ----------------- | -------------------------------------- |
-| Office       | 20-22                  | 40-60              | 8                 | Productivity, comfort                  |
-| Meeting Room | 20-22                  | 40-60              | 15                | Concentration, comfort                 |
-| Classroom    | 20-24                  | 40-60              | 12                | Learning environment, alertness        |
-| Conference   | 20-22                  | 40-60              | 12                | Comfort, focus                         |
-| Hospital     | 20-22                  | 40-60              | 15                | Health, infection control              |
-| Laboratory   | 20-22                  | 40-60              | 20                | Precision work, equipment needs        |
-| Gym          | 18-22                  | 40-60              | 20                | Physical activity, cooling             |
-| Restaurant   | 18-22                  | 40-60              | 20                | Dining comfort, food preservation      |
-| Library      | 20-22                  | 40-60              | 12                | Material preservation, reading comfort |
-| Common Area  | 20-22                  | 40-60              | 10                | Social interaction, general comfort    |
-
-\*ACH = Air Changes per Hour
 
 ## Installation & Setup
 
 ### Prerequisites
 
-- Node.js 18+ (recommended: use latest LTS version)
-- PostgreSQL 13+ database
-- npm, yarn, or bun package manager
+- Node.js 18+ (anbefalet: brug seneste LTS-version)
+- Docker og Docker Compose
+- npm eller yarn package manager
 
 ### Step-by-Step Installation
 
-1. **Clone the repository**
+1. **Klon repository**
 
 ```bash
 git clone https://github.com/yourusername/clima-app.git
 cd clima-app
 ```
 
-2. **Install dependencies**
+2. **Installer dependencies**
 
 ```bash
 npm install
-# or
+# eller
 yarn install
-# or
-bun install
 ```
 
-3. **Set up environment variables**
+3. **Opsæt miljøvariabler**
 
-Create a `.env` file with the following values:
+Opret en `.env` fil med følgende værdier:
 
 ```
 # Database
@@ -535,292 +303,44 @@ DATABASE_URL="postgresql://username:password@localhost:5432/clima_db"
 NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="your-secret-key-at-least-32-chars-long"
 
-# OAuth Providers (Optional)
-GITHUB_CLIENT_ID="your-github-client-id"
-GITHUB_CLIENT_SECRET="your-github-client-secret"
-GOOGLE_CLIENT_ID="your-google-client-id"
-GOOGLE_CLIENT_SECRET="your-google-client-secret"
-
 # Application Settings
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
-DEVICE_API_KEY="your-secret-device-api-key"
 ```
 
-4. **Create database and run migrations**
+4. **Start PostgreSQL databasen med Docker**
 
 ```bash
-# Create the database (if not already created)
-createdb clima_db
+docker-compose up -d
+```
 
-# Run Prisma migrations
+5. **Kør Prisma migrationer**
+
+```bash
 npx prisma migrate dev
-
-# Generate Prisma client
 npx prisma generate
 ```
 
-5. **Seed the database with sample data (optional)**
-
-```bash
-npx prisma db seed
-```
-
-6. **Start the development server**
+6. **Start udviklingsserveren**
 
 ```bash
 npm run dev
-# or
+# eller
 yarn dev
-# or
-bun dev
 ```
 
-7. **Access the application**
+7. **Tilgå applikationen**
 
-Open [http://localhost:3000](http://localhost:3000) in your browser
+Åbn [http://localhost:3000](http://localhost:3000) i din browser
 
-## Development Guidelines
+## Projektets Objektorienterede Design
 
-### Code Organization
+Projektet anvender objektorienteret design med TypeScript hvor:
 
-The project follows a modular architecture:
+- Klasser og interfaces definerer datamodeller
+- Arv og komposition bruges til at opbygge komponenthierarkiet
+- Indkapsling sker gennem private og protected modifiers
+- Polymorfisme opnås gennem interfaces og generics
 
-```
-clima-app/
-├── app/                  # Next.js App Router files
-│   ├── (auth)/           # Authentication routes
-│   ├── (dashboard)/      # Dashboard and main app routes
-│   ├── api/              # API routes
-│   ├── layout.tsx        # Root layout
-│   └── page.tsx          # Landing page
-├── components/           # Reusable UI components
-│   ├── ui/               # Base UI components (Shadcn/UI)
-│   └── [feature]/        # Feature-specific components
-├── lib/                  # Utility functions and shared code
-│   ├── utils.ts          # General utilities
-│   └── validators.ts     # Zod validators
-├── prisma/               # Prisma schema and migrations
-│   ├── schema.prisma     # Database schema
-│   └── migrations/       # Migration files
-├── public/               # Static assets
-├── styles/               # Global styles
-└── types/                # TypeScript type definitions
-```
+## Krav til Målpinde
 
-### Working with the Database
-
-#### Create a new migration
-
-When changing the database schema:
-
-```bash
-# After modifying prisma/schema.prisma
-npx prisma migrate dev --name descriptive-name
-```
-
-#### Verify database state
-
-```bash
-# Check the database structure
-npx prisma db pull
-
-# View data in the Prisma Studio UI
-npx prisma studio
-```
-
-### API Development Patterns
-
-When creating new API endpoints, follow this structure:
-
-```typescript
-// File: app/api/[resource]/route.ts
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { z } from "zod";
-import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
-
-// GET handler example
-export async function GET(request: Request) {
-  // Get auth session
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // Extract query parameters
-  const { searchParams } = new URL(request.url);
-  const teamId = searchParams.get("teamId");
-
-  // Validate parameters
-  if (!teamId) {
-    return NextResponse.json(
-      { error: "Missing required parameter: teamId" },
-      { status: 400 }
-    );
-  }
-
-  try {
-    // Check permissions
-    const isMember = await prisma.teamMember.findFirst({
-      where: {
-        teamId,
-        userId: session.user.id,
-      },
-    });
-
-    if (!isMember) {
-      return NextResponse.json({ error: "Permission denied" }, { status: 403 });
-    }
-
-    // Fetch data
-    const data = await prisma.room.findMany({
-      where: { teamId },
-      include: {
-        _count: {
-          select: { devices: true },
-        },
-      },
-    });
-
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error("API error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
-  }
-}
-```
-
-## Climate Quality Calculation Example
-
-Here's an excerpt of the code that calculates room climate quality:
-
-```typescript
-// Calculate room climate metrics based on specifications
-const calculateRoomClimate = (
-  size: number,
-  capacity: number,
-  roomType: string,
-  height: number = 2.5 // Default ceiling height in meters
-): RoomClimateMetrics => {
-  // Room volume in cubic meters
-  const roomVolume = size * height;
-
-  // Define ACH (Air Changes per Hour) based on room type
-  const roomTypeSettings: {
-    [key: string]: {
-      ach: number;
-      idealTemp: [number, number];
-      idealHumidity: [number, number];
-    };
-  } = {
-    office: { ach: 8, idealTemp: [20, 22], idealHumidity: [40, 60] },
-    meeting_room: { ach: 15, idealTemp: [20, 22], idealHumidity: [40, 60] },
-    classroom: { ach: 12, idealTemp: [20, 24], idealHumidity: [40, 60] },
-    // ... other room types
-  };
-
-  // Use type mapping or default to office settings
-  const settings = roomTypeSettings[roomType] || roomTypeSettings.office;
-
-  // Required airflow in CFM (Cubic Feet per Minute)
-  const roomVolumeInFt3 = roomVolume * 35.3147; // Convert m³ to ft³
-  const requiredAirflow = (roomVolumeInFt3 * settings.ach) / 60;
-
-  // CO₂ load calculation based on number of people
-  const co2Load = capacity * 0.005; // CO₂ load in m³/min
-
-  return {
-    roomVolume,
-    requiredAirflow,
-    co2Load,
-    idealTempRange: settings.idealTemp,
-    idealHumidityRange: settings.idealHumidity,
-    recommendedACH: settings.ach,
-  };
-};
-
-// Assess room climate quality based on current readings and room specifications
-const assessRoomClimate = (
-  temperature: number,
-  humidity: number,
-  room: RoomData | null
-): ClimateQuality => {
-  // If we don't have room data, use basic assessment
-  if (!room || room.size === null || room.capacity === null || !room.type) {
-    return assessBasicClimate(temperature, humidity);
-  }
-
-  try {
-    // Calculate detailed room climate metrics
-    const roomMetrics = calculateRoomClimate(
-      room.size,
-      room.capacity,
-      room.type
-    );
-
-    // Get ideal ranges
-    const [tempMin, tempMax] = roomMetrics.idealTempRange;
-    const [humidMin, humidMax] = roomMetrics.idealHumidityRange;
-
-    // Calculate deviation from ideal ranges
-    let tempDeviation = 0;
-    if (temperature < tempMin) {
-      tempDeviation = tempMin - temperature;
-    } else if (temperature > tempMax) {
-      tempDeviation = temperature - tempMax;
-    }
-
-    let humidDeviation = 0;
-    if (humidity < humidMin) {
-      humidDeviation = (humidMin - humidity) / 5;
-    } else if (humidity > humidMax) {
-      humidDeviation = (humidity - humidMax) / 5;
-    }
-
-    // Factor in room size per person for air quality
-    const spacePerPerson = room.size / room.capacity;
-    const spaceDeviation = Math.max(0, 4 - spacePerPerson) / 2;
-
-    // Combine deviations for overall score (lower is better)
-    const combinedDeviation = tempDeviation + humidDeviation + spaceDeviation;
-
-    // Determine climate quality based on combined deviation
-    let result: ClimateQuality;
-
-    if (combinedDeviation < 1) {
-      result = {
-        status: "excellent",
-        emoji: "😊",
-        message: "Excellent Climate",
-        color: "text-green-500",
-      };
-    } else if (combinedDeviation < 2.5) {
-      result = {
-        status: "good",
-        emoji: "🙂",
-        message: "Good Climate",
-        color: "text-green-400",
-      };
-    }
-    // ... other climate quality levels
-
-    // Add detailed metrics to the result
-    result.details = {
-      roomVolume: roomMetrics.roomVolume,
-      requiredAirflow: Math.round(roomMetrics.requiredAirflow),
-      co2Load: parseFloat(roomMetrics.co2Load.toFixed(3)),
-      idealTempRange: roomMetrics.idealTempRange,
-      idealHumidityRange: roomMetrics.idealHumidityRange,
-    };
-
-    return result;
-  } catch (error) {
-    // Fallback to basic assessment if something goes wrong
-    return assessBasicClimate(temperature, humidity);
-  }
-};
-```
+Dette projekt er udviklet med henblik på at opfylde en række faglige målpinde. Se [målpinde-listen](projekt-status.md) for en detaljeret oversigt over, hvilke faglige mål projektet dækker.

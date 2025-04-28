@@ -1,0 +1,128 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Building {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  logoUrl     String?
+  address     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum BuildingInvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model BuildingInvitation {
+  id              String                   @id @default(uuid())
+  buildingId      String
+  inviteCode      String
+  createdByUserId Int
+  status          BuildingInvitationStatus
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+}
+
+enum BuildingMemberRole {
+  ADMIN
+  MEMBER
+}
+
+model BuildingMember {
+  id              String             @id @default(uuid())
+  buildingId      String
+  userId          Int
+  invitedByUserId Int
+  role            BuildingMemberRole
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+enum TemperatureUnit {
+  CELSIUS
+  FAHRENHEIT
+}
+
+enum HumidityUnit {
+  PERCENT
+  PPM
+}
+
+model BuildingSettings {
+  id                   String          @id @default(uuid())
+  buildingId           String
+  temperatureUnit      TemperatureUnit
+  humidityUnit         HumidityUnit
+  temperatureThreshold Float
+  humidityThreshold    Float
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+}
+
+model Room {
+  id          String   @id @default(uuid())
+  buildingId  String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  devices     Device[]
+}
+
+model RoomSurvey {
+  id          String   @id @default(uuid())
+  roomId      String
+  title       String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RoomSurveyResponse {
+  id        String   @id @default(uuid())
+  surveyId  String
+  rating    Int
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Device {
+  id          String          @id @default(uuid())
+  name        String
+  description String?
+  firmware    String?
+  isPaired    Boolean         @default(false)
+  roomId      String?
+  room        Room?           @relation(fields: [roomId], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  readings    DeviceReading[]
+}
+
+model DeviceReading {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id])
+  temperature Float
+  humidity    Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
