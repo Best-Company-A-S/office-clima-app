@@ -9,7 +9,7 @@ Dette dokument sammenligner vores Clima-app projekt med målpinde-checklisten fo
 ### 💻 Objektorienteret Programmering
 
 - ✅ 1. Anvendelse af objektorienteret programmeringssprog (TypeScript/JavaScript)
-      - https://github.com/Best-Company-A-S/office-clima-app/blob/main/app/page.tsx#L10-L25
+      - https://github.com/Best-Company-A-S/office-clima-app/blob/main/app/(dashboard)/updates/page.tsx#L10-L25
 - ✅ 2. Grundlæggende viden om det valgte programmeringssprog/framework (Next.js, React)
 - ✅ 3. Definition og design af egne klasser
 - ✅ 4. Erklæring og instantiering af objekter
